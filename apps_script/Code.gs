@@ -1,5 +1,6 @@
 var TIMEZONE = 'Asia/Ho_Chi_Minh';
 var DEBUG_VERBOSE = true;
+var APES_LOGO_URL = 'https://drive.google.com/uc?export=view&id=1zZrUqxbCM1-_iOaV2VW8cuTW14mqzVWt';
 
 function doPost(e) {
   var requestId = makeRequestId();
@@ -381,4 +382,239 @@ function logError(requestId, message, err) {
 
 function makeRequestId() {
   return Utilities.getUuid().slice(0, 8).toUpperCase();
+}
+
+function runWeeklyAttendanceAlerts() {
+  var requestId = makeRequestId();
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+      throw new Error('Spreadsheet not available.');
+    }
+
+    var membersSheet = ss.getSheetByName('Members');
+    var attendanceSheet = ss.getSheetByName('Attendance');
+    if (!membersSheet || !attendanceSheet) {
+      throw new Error('Missing Members/Attendance sheet.');
+    }
+
+    var weekRange = getPreviousMondayToFridayRange(new Date(), TIMEZONE);
+    var members = getMembersForWeeklyAlert(membersSheet, requestId);
+    var counts = getAttendanceCountsByMember(attendanceSheet, weekRange.startStr, weekRange.endStr, requestId);
+
+    var sentCount = 0;
+    for (var i = 0; i < members.length; i++) {
+      var member = members[i];
+      var total = counts[member.mssv] || 0;
+      if (total >= 2) {
+        continue;
+      }
+
+      if (!member.email) {
+        logDebug(requestId, 'Skip alert (missing email)', JSON.stringify({ mssv: member.mssv }));
+        continue;
+      }
+
+      sendWeeklyAttendanceAlertEmail(member, total, weekRange, requestId);
+      sentCount++;
+    }
+
+    logDebug(requestId, 'Weekly attendance alerts sent', JSON.stringify({ sentCount: sentCount, weekRange: weekRange }));
+    return jsonSuccess('Weekly attendance alerts processed.', 'WEEKLY_ALERT_DONE', {
+      requestId: requestId,
+      sentCount: sentCount,
+      weekStart: weekRange.startStr,
+      weekEnd: weekRange.endStr
+    });
+  } catch (err) {
+    logError(requestId, 'Weekly alert job failed', err);
+    return jsonError('Weekly alert job failed.', 'WEEKLY_ALERT_FAILED', {
+      requestId: requestId,
+      details: String(err)
+    });
+  }
+}
+
+function createWeeklyAttendanceAlertTrigger() {
+  ScriptApp.newTrigger('runWeeklyAttendanceAlerts')
+    .timeBased()
+    .onWeekDay(ScriptApp.WeekDay.MONDAY)
+    .atHour(8)
+    .create();
+}
+
+function getMembersForWeeklyAlert(sheet, requestId) {
+  var data = sheet.getDataRange().getValues();
+  var rows = [];
+  if (data.length < 2) {
+    return rows;
+  }
+
+  var header = data[0];
+  var idxMssv = header.indexOf('mssv');
+  var idxName = header.indexOf('name');
+  var idxActive = header.indexOf('is_active');
+  var idxEmail = header.indexOf('email');
+  logDebug(requestId, 'Weekly alert member columns', JSON.stringify({ idxMssv: idxMssv, idxName: idxName, idxActive: idxActive, idxEmail: idxEmail }));
+  if (idxMssv < 0 || idxActive < 0 || idxEmail < 0) {
+    return rows;
+  }
+
+  for (var i = 1; i < data.length; i++) {
+    var mssv = (data[i][idxMssv] || '').toString().trim();
+    if (!mssv) {
+      continue;
+    }
+    if (!isTruthy(data[i][idxActive])) {
+      continue;
+    }
+
+    var name = idxName >= 0 ? (data[i][idxName] || '').toString().trim() : '';
+    var email = (data[i][idxEmail] || '').toString().trim();
+    rows.push({
+      mssv: mssv,
+      name: name,
+      email: email,
+      row: i + 1
+    });
+  }
+
+  return rows;
+}
+
+function getAttendanceCountsByMember(sheet, startStr, endStr, requestId) {
+  var data = sheet.getDataRange().getValues();
+  var counts = {};
+  if (data.length < 2) {
+    return counts;
+  }
+
+  var header = data[0];
+  var idxMssv = header.indexOf('mssv');
+  var idxDate = header.indexOf('date');
+  if (idxMssv < 0 || idxDate < 0) {
+    return counts;
+  }
+
+  for (var i = 1; i < data.length; i++) {
+    var mssv = (data[i][idxMssv] || '').toString().trim();
+    if (!mssv) {
+      continue;
+    }
+
+    var dateValue = data[i][idxDate];
+    var dateStr = '';
+    if (dateValue instanceof Date) {
+      dateStr = Utilities.formatDate(dateValue, TIMEZONE, 'yyyy-MM-dd');
+    } else {
+      dateStr = (dateValue || '').toString().trim();
+    }
+
+    if (dateStr < startStr || dateStr > endStr) {
+      continue;
+    }
+
+    counts[mssv] = (counts[mssv] || 0) + 1;
+  }
+
+  logDebug(requestId, 'Attendance counts', JSON.stringify(counts));
+  return counts;
+}
+
+function getPreviousMondayToFridayRange(now, timezone) {
+  var current = new Date(now);
+  var currentDay = current.getDay(); // 0=Sun, 1=Mon ... 6=Sat
+  var daysSinceMonday = (currentDay + 6) % 7;
+  var thisMonday = new Date(current);
+  thisMonday.setDate(current.getDate() - daysSinceMonday);
+  thisMonday.setHours(0, 0, 0, 0);
+
+  var previousMonday = new Date(thisMonday);
+  previousMonday.setDate(thisMonday.getDate() - 7);
+  var previousFriday = new Date(previousMonday);
+  previousFriday.setDate(previousMonday.getDate() + 4);
+
+  return {
+    startStr: Utilities.formatDate(previousMonday, timezone, 'yyyy-MM-dd'),
+    endStr: Utilities.formatDate(previousFriday, timezone, 'yyyy-MM-dd')
+  };
+}
+
+function sendWeeklyAttendanceAlertEmail(member, totalCheckins, weekRange, requestId) {
+  var subject = 'Cảnh báo điểm danh tuần ' + weekRange.startStr + ' - ' + weekRange.endStr;
+  var displayName = member.name || member.mssv;
+  var totalExpected = 2;
+  var missingCount = Math.max(totalExpected - totalCheckins, 0);
+
+  // 1. Lấy file ảnh từ Google Drive thông qua ID
+  var logoFileId = '1zZrUqxbCM1-_iOaV2VW8cuTW14mqzVWt';
+  var logoBlob = DriveApp.getFileById(logoFileId).getBlob().setName("logo.png");
+
+  var htmlBody = [
+    '<div style="margin:0;padding:0;background:#f5f7fb;font-family:Arial,Helvetica,sans-serif;color:#1f2937;">',
+    '  <div style="max-width:640px;margin:0 auto;padding:24px;">',
+    '    <div style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(15,23,42,0.08);border:1px solid #e5e7eb;">',
+    '      <div style="background:linear-gradient(135deg,#0b76f6,#22c55e);padding:22px 28px;color:#ffffff;">',
+    '        <div style="display:flex;align-items:center;gap:14px;">',
+    '          <div style="width:52px;height:52px;border-radius:14px;background:#ffffff;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">',
+    // 2. Sửa thuộc tính src thành cid:apesLogo
+    '            <img src="cid:apesLogo" alt="APES" style="width:100%;height:100%;object-fit:contain;display:block;">',
+    '          </div>',
+    '          <div style="flex:1;min-width:0;padding-left:4px;">',
+    '            <div style="font-size:13px;opacity:0.9;letter-spacing:0.04em;text-transform:uppercase;margin-bottom:4px;">APES Attendance</div>',
+    '            <div style="font-size:22px;font-weight:700;margin-top:10px;line-height:1.2;">Cảnh báo điểm danh tuần</div>',
+    '          </div>',
+    '        </div>',
+    '      </div>',
+    '      <div style="padding:28px;">',
+    '        <p style="margin:0 0 16px 0;font-size:16px;line-height:1.6;">Xin chào <strong>' + escapeHtml(displayName) + '</strong>,</p>',
+    '        <p style="margin:0 0 20px 0;font-size:15px;line-height:1.7;">Hệ thống điểm danh ghi nhận bạn chỉ có <strong>' + totalCheckins + ' lần check-in</strong> trong tuần từ thứ 2 đến thứ 6.</p>',
+    '        <div style="display:flex;gap:12px;flex-wrap:wrap;margin:20px 0;">',
+    '          <div style="flex:1;min-width:170px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:14px 16px;">',
+    '            <div style="font-size:12px;color:#2563eb;text-transform:uppercase;letter-spacing:0.04em;">MSSV</div>',
+    '            <div style="font-size:18px;font-weight:700;color:#0f172a;margin-top:4px;">' + escapeHtml(member.mssv) + '</div>',
+    '          </div>',
+    '          <div style="flex:1;min-width:170px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:14px 16px;">',
+    '            <div style="font-size:12px;color:#16a34a;text-transform:uppercase;letter-spacing:0.04em;">Số lần check-in</div>',
+    '            <div style="font-size:18px;font-weight:700;color:#0f172a;margin-top:4px;">' + totalCheckins + '/2</div>',
+    '          </div>',
+    '        </div>',
+    '        <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:14px 16px;margin:20px 0;">',
+    '          <div style="font-size:14px;color:#9a3412;line-height:1.6;">Bạn còn thiếu <strong>' + missingCount + ' lần check-in</strong> để đạt mức tối thiểu trong tuần này.</div>',
+    '        </div>',
+    '        <div style="font-size:14px;color:#4b5563;line-height:1.7;">',
+    '          <div><strong>Thời gian thống kê:</strong> ' + weekRange.startStr + ' đến ' + weekRange.endStr + '</div>',
+    '          <div><strong>Quy định:</strong> Tối thiểu 2 lần check-in / tuần (thứ 2 - thứ 6)</div>',
+    '        </div>',
+    '        <p style="margin:24px 0 0 0;font-size:14px;line-height:1.7;color:#6b7280;">Vui lòng kiểm tra và bổ sung check-in nếu cần. Cảm ơn bạn đã hợp tác.</p>',
+    '      </div>',
+    '      <div style="padding:18px 28px;background:#f9fafb;border-top:1px solid #e5e7eb;color:#6b7280;font-size:12px;line-height:1.5;">',
+    '        Email này được gửi tự động từ hệ thống điểm danh. Vui lòng không trả lời trực tiếp email này.',
+    '      </div>',
+    '    </div>',
+    '  </div>',
+    '</div>'
+  ].join('');
+
+  // 3. Khai báo thuộc tính inlineImages khi gửi mail
+  MailApp.sendEmail({
+    to: member.email,
+    subject: subject,
+    htmlBody: htmlBody,
+    body: 'Cảnh báo điểm danh tuần ' + weekRange.startStr + ' - ' + weekRange.endStr + ' | MSSV: ' + member.mssv + ' | Số lần check-in: ' + totalCheckins,
+    name: "APES Attendance", // Cấu hình thêm tên người gửi cho chuyên nghiệp
+    inlineImages: {
+      apesLogo: logoBlob
+    }
+  });
+  logDebug(requestId, 'Weekly alert email sent', JSON.stringify({ mssv: member.mssv, email: member.email, totalCheckins: totalCheckins }));
+}
+
+function escapeHtml(value) {
+  return (value || '').toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
