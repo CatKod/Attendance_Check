@@ -26,7 +26,7 @@ function randomToken(): string {
     .join('');
 }
 
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
   const pre = preflight(req);
   if (pre) return pre;
 

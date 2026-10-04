@@ -23,7 +23,7 @@ interface Body {
   mac_address: string;
 }
 
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
   const pre = preflight(req);
   if (pre) return pre;
 
@@ -57,7 +57,7 @@ serve(async (req: Request) => {
     // 1) Tìm user theo MSSV
     const { data: user, error: userErr } = await supabase
       .from('users')
-      .select('id, mssv, full_name, khoa, role, group_id, groups(name)')
+      .select('id, mssv, full_name, khoa, role, group_id, groups!fk_users_group(name)')
       .eq('mssv', normalizedMssv)
       .single();
 

@@ -28,7 +28,7 @@ interface Body {
   device_model?: string;
 }
 
-serve(async (req: Request) => {
+Deno.serve(async (req: Request) => {
   const pre = preflight(req);
   if (pre) return pre;
 
@@ -76,7 +76,7 @@ serve(async (req: Request) => {
     // 2) Lấy thông tin user
     const { data: user } = await supabase
       .from('users')
-      .select('id, mssv, full_name, khoa, role, group_id, email, groups(name)')
+      .select('id, mssv, full_name, khoa, role, group_id, email, groups!fk_users_group(name)')
       .eq('id', link.user_id)
       .single();
 

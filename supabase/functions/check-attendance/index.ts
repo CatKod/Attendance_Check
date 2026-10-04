@@ -34,7 +34,7 @@ interface RequestBody {
   lang?: 'vi' | 'en';
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   const pre = preflight(req);
   if (pre) return pre;
 
