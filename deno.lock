@@ -1,0 +1,93 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.117.2"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.117.2": "6da4477d96ad4392b5a8be8f423384a3812cdd651df483e433ba422a69ff879b"
+  },
+  "workspace": {
+    "members": {
+      "apps/desktop": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@apes/shared-types@*",
+            "npm:@types/node@^22.10.2",
+            "npm:@types/qrcode@^1.5.5",
+            "npm:@types/react-dom@^18.3.5",
+            "npm:@types/react@^18.3.17",
+            "npm:@vitejs/plugin-react@^4.3.4",
+            "npm:autoprefixer@^10.4.20",
+            "npm:concurrently@^9.1.0",
+            "npm:electron-builder@^25.1.8",
+            "npm:electron-updater@^6.3.9",
+            "npm:electron@^33.3.1",
+            "npm:postcss@^8.4.49",
+            "npm:qrcode@^1.5.4",
+            "npm:rimraf@^6.0.1",
+            "npm:tailwindcss@^3.4.17",
+            "npm:typescript@^5.7.2",
+            "npm:vite@^6.0.5"
+          ]
+        }
+      },
+      "apps/mobile": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@apes/shared-types@*",
+            "npm:@react-native-async-storage/async-storage@^2.1.0",
+            "npm:@supabase/supabase-js@^2.47.10",
+            "npm:@types/react@~18.3.12",
+            "npm:babel-preset-expo@12",
+            "npm:expo-application@~6.0.2",
+            "npm:expo-camera@~16.0.10",
+            "npm:expo-constants@~17.0.4",
+            "npm:expo-device@~7.0.2",
+            "npm:expo-network@~7.0.5",
+            "npm:expo-router@~4.0.16",
+            "npm:expo-secure-store@~14.0.1",
+            "npm:expo-status-bar@~2.0.1",
+            "npm:expo-system-ui@~4.0.8",
+            "npm:expo@~52.0.23",
+            "npm:react-native-safe-area-context@4.12.0",
+            "npm:react-native-screens@4.4",
+            "npm:react-native@0.76.5",
+            "npm:react@18.3.1",
+            "npm:typescript@^5.7.2"
+          ]
+        }
+      },
+      "apps/web-admin": {
+        "packageJson": {
+          "dependencies": [
+            "npm:@apes/shared-types@*",
+            "npm:@supabase/ssr@0.5",
+            "npm:@supabase/supabase-js@^2.45.0",
+            "npm:@types/node@^20.16.0",
+            "npm:@types/react-dom@^18.3.0",
+            "npm:@types/react@^18.3.10",
+            "npm:autoprefixer@^10.4.20",
+            "npm:clsx@^2.1.1",
+            "npm:eslint-config-next@14.2.35",
+            "npm:eslint@^8.57.0",
+            "npm:lucide-react@0.460",
+            "npm:next@14.2.35",
+            "npm:postcss@^8.4.47",
+            "npm:react-dom@^18.3.1",
+            "npm:react@^18.3.1",
+            "npm:tailwind-merge@^2.5.0",
+            "npm:tailwindcss@^3.4.13",
+            "npm:typescript@^5.6.0"
+          ]
+        }
+      },
+      "packages/shared-types": {
+        "packageJson": {
+          "dependencies": [
+            "npm:typescript@^5.7.2"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -625,16 +625,46 @@ LẦN ĐẦU TIÊN – Desktop là nơi xác thực
 
 ## 8. Roadmap phát triển (cập nhật)
 
-| Giai đoạn | Thời gian | Nội dung |
-|---|---|---|
-| **Phase 1 – Foundation** | Tuần 1-2 | Database schema + Auth + CRUD members/groups/locations (Web Admin) |
-| **Phase 2** | Tuần 3-4 | Cấu hình Wi-Fi lab (Web Admin) + đọc MAC + liên kết thiết bị |
-| **Phase 3 – Desktop MVP** | Tuần 5-6 | Desktop App: nhập MSSV, xác thực MAC, sinh QR liên kết, điểm danh Wi-Fi |
-| **Phase 4 – Mobile** | Tuần 7-8 | Mobile App: quét QR liên kết, điểm danh qua Wi-Fi |
-| **Phase 5** | Tuần 9 | Dashboard realtime, báo cáo, thống kê |
-| **Phase 6** | Tuần 10 | Đóng gói APK → đăng Google Play, build .exe |
-| **Phase 7** | Tuần 11 | Beta test, sửa lỗi, tối ưu UX |
-| **Phase 8** | Sau go-live | Tính năng nâng cao (AI, gamification, lịch họp…) |
+| Giai đoạn | Thời gian | Nội dung | Trạng thái |
+|---|---|---|---|
+| **Phase 1 – Foundation** | Tuần 1-2 | Database schema + Auth + CRUD members/groups/locations (Web Admin) | ✅ Hoàn thành |
+| **Phase 2** | Tuần 3-4 | Cấu hình Wi-Fi lab (Web Admin) + đọc MAC + liên kết thiết bị | ✅ Hoàn thành |
+| **Phase 3 – Desktop MVP** | Tuần 5-6 | Desktop App: nhập MSSV, xác thực MAC, sinh QR liên kết, điểm danh Wi-Fi | ✅ Hoàn thành |
+| **Phase 4 – Mobile** | Tuần 7-8 | Mobile App: quét QR liên kết, điểm danh qua Wi-Fi | ✅ Hoàn thành |
+| **Phase 5** | Tuần 9 | Dashboard realtime, báo cáo, thống kê | 🔜 Kế tiếp |
+| **Phase 6** | Tuần 10 | Đóng gói APK → đăng Google Play, build .exe | ⏳ Chưa làm |
+| **Phase 7** | Tuần 11 | Beta test, sửa lỗi, tối ưu UX | ⏳ Chưa làm |
+| **Phase 8** | Sau go-live | Tính năng nâng cao (AI, gamification, lịch họp…) | ⏳ Chưa làm |
+
+### 8.1 Ghi chú Phase 3 & 4 (đã triển khai)
+
+**Desktop App — `apps/desktop` (Electron 33):**
+- Đọc MAC + IP từ card mạng đang dùng (ưu tiên Wi-Fi qua `pickPrimaryIPv4`).
+- Xác thực MSSV qua Edge Function `verify-mssv`; lưu MAC vào `device_bindings`.
+- Sinh QR liên kết Mobile 60 giây (`generate-link-qr`), tự làm mới khi hết hạn.
+- Điểm danh qua `check-attendance` với `method = 'desktop'`.
+- Kiosk mode: fullscreen khi đóng gói, ẩn menu, chặn Alt+F4, thoát bằng PIN.
+- Luồng màn hình: nhập MSSV → QR → điểm danh → kết quả → tự về sau 5s.
+- Tiếng beep bằng Web Audio API sau khi điểm danh thành công.
+
+**Mobile App — `apps/mobile` (Expo SDK 52):**
+- Màn hình quét QR (`expo-camera`) là màn hình **duy nhất** cho lần đầu.
+- Đổi QR lấy session qua `claim-mobile-binding`, lưu vào `expo-secure-store`.
+- Tự động đăng nhập từ lần thứ 2 nhờ session đã lưu.
+- Điểm danh qua Wi-Fi: lấy IP (`expo-network`), **từ chối cellular**.
+- Xem hồ sơ (chỉ đọc), tỷ lệ chuyên cần, trạng thái thiết bị, lịch sử điểm danh.
+- **Không có nút đăng xuất** (F-MOB-AUTH-07).
+
+**Database & Edge Functions (đã áp dụng):**
+- Bảng mới: `kiosk_devices`, `device_link_tokens`; cột mới: `device_bindings.note`.
+- Unique index chặn điểm danh 2 lần/ngày (theo giờ Việt Nam).
+- RPC: `match_wifi_by_ip`, `get_checkin_windows`, `vietnam_today`, `cleanup_expired_link_tokens`.
+- 4 Edge Function: `verify-mssv`, `generate-link-qr`, `claim-mobile-binding`, `check-attendance`.
+
+**Còn lại cho Phase 5:**
+- Web Admin: trang Quản lý thiết bị (F-DEV-01..06) — reset binding, phát hiện xung đột.
+- Dashboard realtime + báo cáo/thống kê (F-RPT-01..09).
+- Desktop: màn hình nền sau 30s, auto-start cùng Windows.
 
 ---
 

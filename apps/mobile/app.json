@@ -1,0 +1,60 @@
+{
+  "expo": {
+    "name": "APES Lab",
+    "slug": "apes-lab-attendance",
+    "scheme": "apes",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#f04030"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "vn.apes.lab.attendance",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Cần camera để quét mã QR liên kết từ Desktop tại phòng Lab.",
+        "NSLocalNetworkUsageDescription": "Cần truy cập mạng nội bộ để kiểm tra kết nối Wi-Fi Lab."
+      }
+    },
+    "android": {
+      "package": "vn.apes.lab.attendance",
+      "adaptiveIcon": {
+        "backgroundColor": "#f04030"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.ACCESS_WIFI_STATE"
+      ],
+      "blockedPermissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cần camera để quét mã QR liên kết từ Desktop tại phòng Lab."
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ],
+      "expo-router"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

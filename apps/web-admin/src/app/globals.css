@@ -1,0 +1,221 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ===== APES Lab Design System =====
+     * Brand color extracted from APES LOGO.jpg: #F04030
+     * HSL: 4.8deg 88.2% 56.9%
+     */
+    --apes-red: 4 88% 57%;
+    --apes-red-dark: 4 79% 47%;
+    --apes-red-darker: 4 70% 38%;
+    --apes-red-light: 4 100% 97%;
+    --apes-red-border: 4 80% 90%;
+
+    /* Surfaces */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 9%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 9%;
+
+    /* Brand primary = APES red */
+    --primary: var(--apes-red);
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 97%;
+    --secondary-foreground: 0 0% 9%;
+
+    --muted: 0 0% 97%;
+    --muted-foreground: 0 0% 45%;
+
+    --accent: 4 100% 97%;
+    --accent-foreground: 4 79% 42%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --info: 199 89% 48%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 88%;
+    --ring: var(--apes-red);
+
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    --background: 0 0% 6%;
+    --foreground: 0 0% 96%;
+
+    --card: 0 0% 9%;
+    --card-foreground: 0 0% 96%;
+
+    --primary: var(--apes-red);
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 14%;
+    --secondary-foreground: 0 0% 96%;
+
+    --muted: 0 0% 14%;
+    --muted-foreground: 0 0% 60%;
+
+    --accent: 4 60% 16%;
+    --accent-foreground: 4 90% 80%;
+
+    --destructive: 0 63% 42%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 18%;
+    --input: 0 0% 20%;
+    --ring: var(--apes-red);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/40;
+  }
+}
+
+@layer components {
+  /* ===== APES Card ===== */
+  .apes-card {
+    @apply rounded-xl border bg-card text-card-foreground shadow-sm;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  }
+  .apes-card:hover {
+    @apply shadow-md;
+  }
+
+  /* ===== APES Stat Card ===== */
+  .apes-stat-card {
+    @apply apes-card relative overflow-hidden p-5;
+  }
+  .apes-stat-card::before {
+    content: '';
+    @apply absolute inset-x-0 top-0 h-1;
+    background: linear-gradient(90deg, hsl(var(--primary)), hsl(var(--primary)) 60%, transparent);
+  }
+
+  /* ===== APES Badge ===== */
+  .apes-badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+
+  /* ===== APES Sidebar Nav Item ===== */
+  .apes-nav-item {
+    @apply relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium
+           text-muted-foreground transition-all duration-150;
+  }
+  .apes-nav-item:hover {
+    @apply bg-accent text-accent-foreground;
+  }
+  .apes-nav-item.active {
+    @apply bg-accent text-accent-foreground;
+  }
+  .apes-nav-item.active::before {
+    content: '';
+    @apply absolute left-0 top-1/2 h-6 w-1 -translate-y-1/2 rounded-r-full;
+    background: hsl(var(--primary));
+  }
+
+  /* ===== APES Table ===== */
+  .apes-table {
+    @apply w-full text-sm;
+  }
+  .apes-table thead th {
+    @apply border-b bg-muted/50 px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground;
+  }
+  .apes-table tbody td {
+    @apply border-b px-4 py-3;
+  }
+  .apes-table tbody tr {
+    @apply transition-colors;
+  }
+  .apes-table tbody tr:hover {
+    @apply bg-muted/40;
+  }
+  .apes-table tbody tr:last-child td {
+    @apply border-b-0;
+  }
+
+  /* ===== APES Form Field ===== */
+  .apes-label {
+    @apply text-sm font-medium leading-none text-foreground;
+  }
+  .apes-field {
+    @apply apes-card p-4;
+  }
+
+  /* ===== APES Section Title ===== */
+  .apes-section-title {
+    @apply text-lg font-semibold tracking-tight text-foreground;
+  }
+  .apes-section-desc {
+    @apply mt-1 text-sm text-muted-foreground;
+  }
+}
+
+@layer utilities {
+  /* Brand gradient text */
+  .text-brand-gradient {
+    @apply bg-gradient-to-br from-primary to-[hsl(4_79%_42%)] bg-clip-text text-transparent;
+  }
+
+  /* Subtle brand glow */
+  .shadow-brand {
+    box-shadow: 0 4px 14px -4px hsl(var(--primary) / 0.35);
+  }
+  .shadow-brand-lg {
+    box-shadow: 0 12px 32px -12px hsl(var(--primary) / 0.45);
+  }
+
+  /* Brand gradient background */
+  .bg-brand-gradient {
+    background: linear-gradient(135deg, hsl(4 88% 57%) 0%, hsl(4 79% 45%) 100%);
+  }
+  .bg-brand-subtle {
+    background: linear-gradient(135deg, hsl(4 100% 98%) 0%, hsl(0 0% 100%) 100%);
+  }
+
+  /* Grid pattern for hero sections */
+  .bg-grid-pattern {
+    background-image:
+      linear-gradient(to right, hsl(var(--border)) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--border)) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+}

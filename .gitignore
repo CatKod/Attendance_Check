@@ -1,0 +1,94 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Testing
+coverage/
+*.lcov
+
+# Next.js
+.next/
+out/
+build/
+dist/
+
+# Production
+*.tgz
+
+# Environment files (NEVER COMMIT!)
+.env
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Supabase
+supabase/.branches
+supabase/.temp
+
+# Shared packages (build output)
+packages/*/dist/
+packages/*/dist-esm/
+
+# Expo / React Native
+.expo/
+.expo-shared/
+*.jks
+*.keystore
+*.p12
+*.cer
+*.pem
+ios/
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+*.iml
+*.hprof
+.cxx/
+
+# Desktop (Tauri/Electron)
+src-tauri/target/
+src-tauri/gen/
+*.exe
+*.dmg
+*.deb
+apps/desktop/release/
+apps/desktop/.vite/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.cursor-scripts/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Cache
+.eslintcache
+.stylelintcache
+.parcel-cache
+.cache
+
+# TypeScript
+*.tsbuildinfo
+
+# Docker
+.docker/
+
+# Misc
+.turbo
+.vercel
