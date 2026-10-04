@@ -50,8 +50,7 @@
         {
           "configureAndroidBackup": true
         }
-      ],
-      "expo-router"
+      ]
     ],
     "experiments": {
       "typedRoutes": true
