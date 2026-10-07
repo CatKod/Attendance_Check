@@ -14,6 +14,7 @@ export default async function DownloadsPage() {
   // Tạm thời hard-code
   const DESKTOP_VERSION = '0.2.0';
   const DESKTOP_FILENAME = `APES-Lab-Setup-${DESKTOP_VERSION}.exe`;
+  const GITHUB_REPO = 'CatKod/Attendance_Check';
 
   return (
     <div className="space-y-6">
@@ -64,7 +65,7 @@ export default async function DownloadsPage() {
                 Tải xuống Desktop ({DESKTOP_VERSION})
               </a>
               <a
-                href={`https://github.com/apes-lab/attendance-check/releases/tag/v${DESKTOP_VERSION}`}
+                href={`https://github.com/${GITHUB_REPO}/releases/tag/${DESKTOP_VERSION}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-5 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"

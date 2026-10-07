@@ -1,8 +1,8 @@
 # APES Lab - Hệ thống Điểm danh
 
 > **Tên dự án:** APES Lab Attendance System
-> **Phiên bản tài liệu:** 1.1
-> **Ngày cập nhật:** 03/10/2026
+> **Phiên bản tài liệu:** 1.2
+> **Ngày cập nhật:** 07/10/2026
 > **Mục đích:** Điểm danh & quản lý sinh viên trong APES Lab (Học viện Công nghệ Bưu chính Viễn thông)
 
 ---
@@ -18,27 +18,29 @@ APES Lab là phòng thí nghiệm với nhiều nhóm nghiên cứu (Sạc pin, 
 
 ### 1.2. Mục tiêu
 Xây dựng một hệ thống điểm danh số hóa, **đa nền tảng**, tập trung dữ liệu trên **Supabase**, gồm:
-- **Desktop App (.exe – Windows)** – **THIẾT BỊ CHÍNH** đặt tại lab. Đây là điểm xác thực ban đầu cho mỗi sinh viên.
+- **Desktop App (.exe – Windows)** – **THIẾT BỊ CHÍNH** cài trên **laptop cá nhân** của mỗi sinh viên. Đây là điểm xác thực ban đầu & liên kết vĩnh viễn với sinh viên.
 - **Mobile App (Android – Google Play)** – **PHỤ**, chỉ dùng sau khi sinh viên đã được xác thực trên Desktop.
 - **Web App quản lý** dành cho **Trưởng Lab** và **Chủ nghiệm Lab** để cấu hình & giám sát.
 
 ### 1.3. Triết lý thiết kế (quan trọng)
 
-> **Desktop là "cổng xác thực vật lý"**, **Mobile là "thiết bị điểm danh tiện lợi"** đã được Desktop "bảo chứng".
+> **Từ phiên bản 0.2.0:** Desktop không còn là "kiosk công cộng đặt cố định" mà là **app cá nhân cố định theo máy** — mỗi sinh viên cài 1 bản trên laptop cá nhân, app tự nhận diện qua MAC address.
 
-- **Bước 1 – Xác thực lần đầu (Desktop):** Sinh viên phải nhập **MSSV** trên **Desktop App** tại lab. Hệ thống xác nhận MSSV hợp lệ với lab, lưu **địa chỉ MAC của máy Desktop** vào cơ sở dữ liệu gắn với tài khoản sinh viên.
-- **Bước 2 – Mobile khởi động (lần đầu trên điện thoại):** Mobile App **không thể tự đăng nhập**. Sinh viên phải quét **mã QR sinh viên** (do Desktop tạo ngay sau khi xác thực ở Bước 1) bằng Mobile App để liên kết tài khoản.
+- **Bước 1 – Xác thực lần đầu (Desktop, lần đầu):** Sinh viên nhập **MSSV** trên Desktop App. Hệ thống lưu **địa chỉ MAC + hostname + OS info + disk serial** của máy vào database, gắn với tài khoản sinh viên. Phiên đăng nhập được lưu vào **Windows Registry** (`HKCU\Software\APES-Lab\Kiosk`).
+- **Bước 2 – Mobile khởi kết nối (lần đầu trên điện thoại):** Mobile App **không thể tự đăng nhập**. Sinh viên quét **mã QR** do Desktop tạo ngay sau khi xác thực ở Bước 1. Hệ thống lưu **Android ID** của máy, gắn với tài khoản. Desktop đánh dấu `mobile_linked_at` — về sau sẽ **không hiện QR nữa**.
 - **Bước 3 – Điểm danh hằng ngày:**
-  - **Tại lab:** dùng Desktop App (nhập MSSV + check IP Wi-Fi lab) **hoặc** Mobile App (đã liên kết ở Bước 2 + cùng Wi-Fi lab).
+  - **Tại lab:** dùng **Desktop App** (đã liên kết MAC → check IP Wi-Fi lab) hoặc **Mobile App** (đã liên kết + cùng Wi-Fi lab).
   - **Ở xa:** không điểm danh được, vì bắt buộc cùng Wi-Fi lab.
+- **Bước 4 – Các lần sau (Desktop):** Mở app là vào **thẳng Home** (nhờ session trong Registry). Sau điểm danh, ở lại Home — không reset về nhập MSSV. Có nút **Đăng xuất** rõ ràng để xoá phiên khi cần (đổi máy, v.v.).
+- **Bước 5 – Auto-update:** App tự động check GitHub Releases mỗi khi khởi động. Khi có bản mới, dialog sẽ hỏi SV cập nhật.
 
 ### 1.4. Đối tượng sử dụng
 
 | Vai trò | Nền tảng | Quyền hạn |
 |---|---|---|
-| **Sinh viên** (Student) | Windows Desktop (chính) + Android Mobile (phụ) | Xác thực ban đầu trên Desktop, điểm danh trên cả 2 (chỉ khi cùng Wi-Fi lab), xem lịch sử cá nhân |
+| **Sinh viên** (Student) | Windows Desktop (laptop cá nhân) + Android Mobile | Xác thực 1 lần, app tự nhận diện các lần sau. Điểm danh trên cả 2 (chỉ khi cùng Wi-Fi lab), xem lịch sử cá nhân, đăng xuất khi cần |
 | **Trưởng nhóm** (Group Leader) | Windows Desktop + Web | Như sinh viên + xem điểm danh của nhóm mình, tạo buổi họp nhóm |
-| **Trưởng Lab** (Lab Leader) | Web | Cấu hình Wi-Fi lab, quản lý nhóm/buổi họp, xem báo cáo, duyệt điểm danh |
+| **Trưởng Lab** (Lab Leader) | Web | Cấu hình Wi-Fi lab, quản lý nhóm/buổi họp, xem báo cáo, duyệt điểm danh, **reset device binding** cho SV đổi máy |
 | **Chủ nghiệm Lab** (Lab Manager) | Web | Toàn quyền quản trị hệ thống |
 
 ---
@@ -166,22 +168,36 @@ Sinh viên (student)
 - **F-DESK-ATT-04:** Sau khi điểm danh thành công: tiếng beep + hiển thị tên SV + thời gian.
 - **F-DESK-ATT-05:** Không cho phép điểm danh 2 lần trong cùng 1 ngày (theo session/buổi họp).
 
-#### 4.1.3. Giao diện kiosk
+#### 4.1.3. App cá nhân cố định theo máy (v0.2.0+)
 
-- **F-DESK-KIOSK-01:** Chạy ở chế độ **kiosk** (fullscreen, không thoát được bằng Alt+F4).
-- **F-DESK-KIOSK-02:** Hiển thị thời gian thực, ngày giờ, lịch họp hôm nay (nếu có).
-- **F-DESK-KIOSK-03:** Khởi động cùng Windows (auto-start).
-- **F-DESK-KIOSK-04:** Chế độ nền (screensaver) khi không có ai tương tác 30 giây.
-- **F-DESK-KIOSK-05:** Tự động quay về màn hình nhập MSSV sau khi điểm danh xong 5 giây.
-- **F-DESK-KIOSK-06:** Chỉ Trưởng Lab mới thoát được chế độ kiosk (nhập mã PIN).
-- **F-DESK-KIOSK-07:** Hiển thị QR Code liên kết Mobile trong 60 giây sau khi SV xác thực.
+> **Thay đổi từ phiên bản 0.2.0:** Desktop không còn là kiosk công cộng. Mỗi SV cài 1 bản trên laptop cá nhân, app tự nhận diện qua MAC.
 
-#### 4.1.4. Cấu hình Desktop (chỉ Trưởng Lab qua PIN)
+- **F-DESK-APP-01:** Phiên đăng nhập lưu trong **Windows Registry** (`HKCU\Software\APES-Lab\Kiosk`). Bao gồm MSSV, user_id, MAC, tên, ngày liên kết, trạng thái mobile.
+- **F-DESK-APP-02:** Khi mở app, **tự động đăng nhập** nếu MAC hiện tại khớp với MAC trong Registry.
+- **F-DESK-APP-03:** Nếu MAC không khớp (SV đổi máy mà chưa được reset), xoá session, hiện thông báo và yêu cầu nhập lại MSSV.
+- **F-DESK-APP-04:** Sau khi đăng nhập thành công, app gọi `verify-mssv` để lấy thông tin mới nhất (role, nhóm, lịch hôm nay) — KHÔNG dùng cache cũ.
+- **F-DESK-APP-05:** Sau điểm danh, ở lại **Home** (không reset về màn nhập MSSV). Tự động quay về Home sau 5 giây.
+- **F-DESK-APP-06:** Có nút **Đăng xuất** ở header. Khi bấm, xác nhận → xoá session khỏi Registry → về màn nhập MSSV.
+- **F-DESK-APP-07:** Hiển thị **fingerprint máy** khi verify: hostname, OS (vd `Windows NT 10.0.26200`), disk serial. Admin dùng thông tin này để nhận biết máy khi reset.
+- **F-DESK-APP-08:** Sau khi mobile liên kết (qua QR), Desktop **đánh dấu `mobile_linked_at`** — từ lần sau app sẽ **KHÔNG hiện QR nữa**.
+- **F-DESK-APP-09:** Vẫn có nút "Liên kết ngay" trong trang chủ để SV chủ động kết nối mobile bất kỳ lúc nào.
 
-- **F-DESK-CFG-01:** Cấu hình URL Supabase, API key.
-- **F-DESK-CFG-02:** Đổi mã PIN thoát kiosk.
-- **F-DESK-CFG-03:** Xem MAC address hiện tại của máy.
-- **F-DESK-CFG-04:** Test kết nối tới Supabase.
+#### 4.1.4. Auto-update (v0.2.0+)
+
+- **F-DESK-UPDATE-01:** Khi khởi động, app tự động check GitHub Releases (sau 5 giây để UI load trước).
+- **F-DESK-UPDATE-02:** Nếu có bản mới, dialog thông báo + tự động tải về (background).
+- **F-DESK-UPDATE-03:** Khi tải xong, dialog hỏi "Khởi động lại ngay" hoặc "Để sau".
+- **F-DESK-UPDATE-04:** Nếu chọn "Để sau", update tự cài khi tắt app (`autoInstallOnAppQuit`).
+- **F-DESK-UPDATE-05:** Có nút "Kiểm tra cập nhật" trong trang Cài đặt (Settings).
+- **F-DESK-UPDATE-06:** Hiển thị badge "Có bản mới vX.Y.Z" / "Đang tải N%" ở header khi đang update.
+
+#### 4.1.5. Cấu hình Desktop (qua menu Settings)
+
+- **F-DESK-CFG-01:** Xem URL Supabase, Functions URL, tên Lab.
+- **F-DESK-CFG-02:** Xem MAC address, hostname, OS, tất cả IP interfaces.
+- **F-DESK-CFG-03:** Test kết nối tới Supabase.
+- **F-DESK-CFG-04:** Xem phiên đăng nhập (MSSV, họ tên, ngày liên kết, mobile đã liên kết hay chưa).
+- **F-DESK-CFG-05:** Kiểm tra cập nhật thủ công.
 
 ---
 
@@ -333,7 +349,10 @@ Sinh viên (student)
 - **F-SET-03:** Cấu hình giờ điểm danh tự động hằng ngày.
 - **F-SET-04:** Backup/restore dữ liệu.
 - **F-SET-05:** Xem audit log (nhật ký hoạt động).
-- **F-SET-06:** Quản lý mã PIN thoát kiosk của Desktop.
+- **F-SET-06:** ~~Quản lý mã PIN thoát kiosk của Desktop~~ _(đã bỏ từ v0.2.0)_.
+- **F-SET-07:** **Quản lý thiết bị** (v0.2.0+): xem tất cả SV kèm trạng thái binding desktop/mobile.
+- **F-SET-08:** **Reset device binding** (v0.2.0+): Trưởng Lab có thể reset binding của 1 SV khi SV báo mất/mượn máy khác. Phải nhập lý do (lưu audit log).
+- **F-SET-09:** **Xem fingerprint** (v0.2.0+): hiển thị hostname, OS, disk serial của từng máy để dễ nhận biết.
 
 ---
 
@@ -353,7 +372,10 @@ users (id, mssv, full_name, email, khoa, group_id, role, ...)
     └── id ──► device_bindings (id, user_id, kind ['desktop'|'mobile'],
                                    device_identifier,    -- desktop: MAC, mobile: Android ID
                                    bound_at, last_seen_at, status ['active'|'reset'],
-                                   reset_by, reset_at)
+                                   reset_by, reset_at,
+                                   -- v0.2.0+:
+                                   hostname, os_info, disk_serial,
+                                   mobile_linked_at)
     
 sessions (id, title, start_time, end_time, location_id, group_id, status, ...)
     │
@@ -696,8 +718,11 @@ LẦN ĐẦU TIÊN – Desktop là nơi xác thực
 | MAC | Media Access Control (địa chỉ vật lý của card mạng) |
 | SSID | Service Set Identifier (tên Wi-Fi) |
 | Subnet | Dải địa chỉ IP (ví dụ: 192.168.1.0/24) |
-| Kiosk | Máy tính đặt cố định tại một vị trí |
-| Device Binding | Liên kết tài khoản sinh viên với một thiết bị vật lý |
+| App cá nhân (Personal App) | App Desktop cài trên **laptop cá nhân** của SV, liên kết vĩnh viễn qua MAC (thay thế kiosk từ v0.2.0) |
+| Desktop App | Tương tự "App cá nhân" — dùng để chỉ ứng dụng Electron chạy trên Windows |
+| Device Binding | Liên kết tài khoản sinh viên với một thiết bị vật lý (desktop: MAC, mobile: Android ID) |
+| Fingerprint | Thông tin nhận dạng máy: hostname, OS, disk serial — chống clone VM |
+| Mobile Linked | Desktop đã liên kết với mobile (qua QR) — sau đó không hiện QR nữa |
 | TTL | Time-To-Live (thời gian sống của token) |
 
 ### 10.2. Tài liệu tham khảo

@@ -71,8 +71,8 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "apes-lab",
-      "repo": "attendance-check",
+      "owner": "CatKod",
+      "repo": "Attendance_Check",
       "releaseType": "release",
       "vPrefixedTagName": false
     }

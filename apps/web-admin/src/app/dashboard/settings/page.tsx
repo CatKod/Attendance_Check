@@ -146,7 +146,7 @@ export default async function SettingsPage() {
                 App sẽ tự động cập nhật khi có phiên bản mới.
               </p>
               <a
-                href="https://github.com/apes-lab/attendance-check/releases/latest"
+                href="https://github.com/CatKod/Attendance_Check/releases/latest"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-gradient px-3 py-1.5 text-xs font-bold text-white shadow-brand transition-transform hover:scale-105"
@@ -175,7 +175,7 @@ export default async function SettingsPage() {
                 Cài bằng file APK hoặc qua Expo Go (dev).
               </p>
               <a
-                href="https://github.com/apes-lab/attendance-check/releases/latest"
+                href="https://github.com/CatKod/Attendance_Check/releases/latest"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-accent"
@@ -193,12 +193,12 @@ export default async function SettingsPage() {
         <span>
           Mã nguồn:{' '}
           <a
-            href="https://github.com/apes-lab/attendance-check"
+            href="https://github.com/CatKod/Attendance_Check"
             target="_blank"
             rel="noopener noreferrer"
             className="font-mono text-foreground hover:underline"
           >
-            github.com/apes-lab/attendance-check
+            github.com/CatKod/Attendance_Check
           </a>
         </span>
       </div>
