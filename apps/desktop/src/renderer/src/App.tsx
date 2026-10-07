@@ -7,11 +7,11 @@
 //   3. QR         → sinh QR liên kết Mobile (chỉ hiện khi mobile chưa link)
 //   4. HOME       → màn chính sau khi đăng nhập
 //   5. RESULT     → kết quả điểm danh (5s → về HOME, không reset)
-//   6. LOGOUT     → xác nhận đăng xuất
 //
 // Điểm khác biệt so với bản kiosk cũ:
 //   - KHÔNG tự reset về màn MSSV sau điểm danh → ở lại HOME
-//   - Có nút "Đăng xuất" ở góc
+//   - KHÔNG có nút đăng xuất: 1 máy chỉ liên kết 1 MSSV vĩnh viễn.
+//     SV muốn đổi máy phải nhờ Trưởng Lab reset binding trên Supabase.
 //   - Tự động đăng nhập nếu session hợp lệ (cùng MAC)
 // ============================================================
 
@@ -41,7 +41,7 @@ declare global {
   }
 }
 
-type Screen = 'loading' | 'mssv' | 'qr' | 'home' | 'result' | 'logout' | 'settings';
+type Screen = 'loading' | 'mssv' | 'qr' | 'home' | 'result' | 'settings';
 
 const ROLE_LABEL: Record<string, string> = {
   student: 'Sinh viên',
@@ -302,22 +302,6 @@ export default function App() {
     }
   }, [student, attending]);
 
-  // ------------------------------------------------------------
-  // Đăng xuất
-  // ------------------------------------------------------------
-  const doLogout = useCallback(async () => {
-    if (resetTimer.current) window.clearTimeout(resetTimer.current);
-    await window.kiosk.clearSession();
-    setSession(null);
-    setStudent(null);
-    setQr(null);
-    setResult(null);
-    setMssv('');
-    setError(null);
-    setWindows([]);
-    setScreen('mssv');
-  }, []);
-
   const checkConnection = useCallback(async () => {
     const res = await window.kiosk.testConnection();
     setConnOk(res.ok);
@@ -357,7 +341,6 @@ export default function App() {
           setScreen('settings');
           void checkConnection();
         }}
-        onLogout={doLogout}
       />
 
       <main className="flex-1 overflow-hidden">
@@ -445,7 +428,6 @@ export default function App() {
             onBack={() => setScreen(session ? 'home' : 'mssv')}
             onRecheck={checkConnection}
             onCheckUpdate={checkUpdate}
-            onLogout={doLogout}
           />
         )}
       </main>
@@ -466,7 +448,6 @@ function Header({
   student,
   updateStatus,
   onOpenSettings,
-  onLogout,
 }: {
   labName: string;
   clock: Date;
@@ -474,7 +455,6 @@ function Header({
   student: Student | null;
   updateStatus: UpdateStatus | null;
   onOpenSettings: () => void;
-  onLogout: () => void;
 }) {
   const time = clock.toLocaleTimeString('vi-VN', {
     hour: '2-digit',
@@ -526,15 +506,6 @@ function Header({
             {net?.ip ?? '—'}
           </p>
         </div>
-        {student && (
-          <button
-            onClick={onLogout}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-            title="Đăng xuất"
-          >
-            Đăng xuất
-          </button>
-        )}
         <button
           onClick={onOpenSettings}
           className="rounded-lg border border-slate-200 p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
@@ -921,7 +892,6 @@ function SettingsScreen({
   onBack,
   onRecheck,
   onCheckUpdate,
-  onLogout,
 }: {
   net: NetworkInfo | null;
   labName: string;
@@ -931,7 +901,6 @@ function SettingsScreen({
   onBack: () => void;
   onRecheck: () => void;
   onCheckUpdate: () => void;
-  onLogout: () => void;
 }) {
   return (
     <div className="h-full overflow-y-auto px-6 py-8">
@@ -978,20 +947,10 @@ function SettingsScreen({
                 label="Ngày liên kết"
                 value={new Date(session.boundAt).toLocaleString('vi-VN')}
               />
-              <button
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      'Đăng xuất sẽ xoá phiên trên máy này. Bạn có chắc?'
-                    )
-                  ) {
-                    onLogout();
-                  }
-                }}
-                className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-100"
-              >
-                Đăng xuất & xoá phiên
-              </button>
+              <p className="mt-3 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                Phiên đăng nhập cố định trên máy này. Để đổi MSSV, liên hệ
+                Trưởng Lab để reset binding trên hệ thống.
+              </p>
             </Card>
           )}
 
