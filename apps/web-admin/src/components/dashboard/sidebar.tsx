@@ -12,6 +12,8 @@ import {
   CalendarDays,
   Clock,
   Settings,
+  Monitor,
+  Download,
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,6 +28,8 @@ const NAV_GROUPS = [
       { href: '/dashboard/wifi', label: 'Wi-Fi Lab', icon: Wifi },
       { href: '/dashboard/sessions', label: 'Buổi họp', icon: CalendarDays },
       { href: '/dashboard/schedule', label: 'Lịch Lab', icon: Clock },
+      { href: '/dashboard/devices', label: 'Thiết bị', icon: Monitor },
+      { href: '/dashboard/downloads', label: 'Tải ứng dụng', icon: Download },
     ],
   },
   {

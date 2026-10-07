@@ -57,6 +57,16 @@ export interface DeviceBinding {
   reset_by?: string;
   reset_at?: string;
   reset_reason?: string;
+  /** Mobile đã liên kết thành công (chỉ dùng cho kind='desktop') */
+  mobile_linked_at?: string | null;
+  /** Tên máy (chỉ dùng cho kind='desktop') */
+  hostname?: string | null;
+  /** Thông tin OS (chỉ dùng cho kind='desktop') */
+  os_info?: string | null;
+  /** Serial ổ cứng (chỉ dùng cho kind='desktop') */
+  disk_serial?: string | null;
+  /** Ghi chú */
+  note?: string | null;
 }
 
 export type AttendanceMethod = 'desktop' | 'mobile_wifi' | 'manual_admin';

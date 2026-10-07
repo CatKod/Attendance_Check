@@ -170,6 +170,15 @@ Deno.serve(async (req: Request) => {
       .update({ used_at: now })
       .eq('id', link.id);
 
+    // 4b) Đánh dấu desktop binding đã liên kết mobile (vĩnh viễn)
+    //     Sau này Desktop sẽ không hiện QR nữa nếu mobile_linked_at != null
+    await supabase
+      .from('device_bindings')
+      .update({ mobile_linked_at: now })
+      .eq('user_id', user.id)
+      .eq('kind', 'desktop')
+      .eq('status', 'active');
+
     // 5) Tạo access token cho app (dùng admin.generateLink hoặc ký JWT thủ công)
     //    Cách đơn giản & ổn định: tạo magiclink token rồi app dùng verifyOtp.
     const { data: otp, error: otpErr } = await supabase.auth.admin.generateLink({

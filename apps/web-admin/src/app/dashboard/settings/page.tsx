@@ -1,5 +1,16 @@
 import { createClient } from '@/lib/supabase/server';
-import { Settings, Building2, Timer, KeyRound, Clock } from 'lucide-react';
+import {
+  Settings,
+  Building2,
+  Timer,
+  KeyRound,
+  Clock,
+  Download,
+  Monitor,
+  Smartphone,
+  Apple,
+  Github,
+} from 'lucide-react';
 
 export default async function SettingsPage() {
   const supabase = createClient();
@@ -105,6 +116,92 @@ export default async function SettingsPage() {
           })}
         </div>
       )}
+
+      {/* Tải ứng dụng */}
+      <div>
+        <h2 className="apes-section-title flex items-center gap-2 text-2xl">
+          <Download className="h-5 w-5 text-primary" />
+          Tải ứng dụng
+        </h2>
+        <p className="apes-section-desc">
+          Tải về và cài đặt trên thiết bị cá nhân của bạn
+        </p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        {/* Desktop */}
+        <div className="apes-card p-5">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
+              <Monitor className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-bold text-foreground">
+                APES Lab Desktop
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Dành cho Windows 10/11. Cài đặt trên laptop cá nhân.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                App sẽ tự động cập nhật khi có phiên bản mới.
+              </p>
+              <a
+                href="https://github.com/apes-lab/attendance-check/releases/latest"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-gradient px-3 py-1.5 text-xs font-bold text-white shadow-brand transition-transform hover:scale-105"
+              >
+                <Download className="h-3 w-3" />
+                Tải về (Windows .exe)
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile */}
+        <div className="apes-card p-5">
+          <div className="flex items-start gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent text-primary">
+              <Smartphone className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-base font-bold text-foreground">
+                APES Lab Mobile
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Dành cho Android. Quét QR từ Desktop để liên kết.
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Cài bằng file APK hoặc qua Expo Go (dev).
+              </p>
+              <a
+                href="https://github.com/apes-lab/attendance-check/releases/latest"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-accent"
+              >
+                <Download className="h-3 w-3" />
+                Tải về (Android .apk)
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Github className="h-3.5 w-3.5" />
+        <span>
+          Mã nguồn:{' '}
+          <a
+            href="https://github.com/apes-lab/attendance-check"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-foreground hover:underline"
+          >
+            github.com/apes-lab/attendance-check
+          </a>
+        </span>
+      </div>
     </div>
   );
 }

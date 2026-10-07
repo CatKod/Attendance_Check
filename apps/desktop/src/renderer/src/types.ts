@@ -30,6 +30,9 @@ export interface VerifyResult {
   binding?: 'created' | 'reused' | 'reset_rebind';
   user?: Student;
   mac_address?: string;
+  hostname?: string;
+  /** Mobile đã liên kết hay chưa — true thì không hiện QR */
+  mobile_linked?: boolean;
   today_windows?: CheckinWindow[];
   day_of_week?: number;
 }
@@ -58,10 +61,40 @@ export interface AttendanceResult {
   today_windows?: CheckinWindow[];
 }
 
+/** Session lưu trong Windows Registry — giúp app auto-login */
+export interface PersistentSession {
+  mssv: string;
+  userId: string;
+  mac: string;
+  fullName: string;
+  boundAt: string;
+  mobileLinked: boolean;
+  hostname?: string;
+  osInfo?: string;
+}
+
 export interface AppConfigInfo {
   labName: string;
   functionsUrl: string;
   supabaseUrl: string;
+}
+
+export type UpdateState =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'not-available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error';
+
+export interface UpdateStatus {
+  state: UpdateState;
+  version?: string;
+  releaseDate?: string;
+  releaseNotes?: string;
+  progress?: number;
+  error?: string;
 }
 
 // Định nghĩa window.kiosk do preload expose
@@ -72,8 +105,19 @@ export interface KioskBridge {
   verifyMssv(mssv: string): Promise<{ status: number; data: VerifyResult }>;
   generateQr(userId: string): Promise<QrResult>;
   checkAttendance(userId: string): Promise<{ status: number; data: AttendanceResult }>;
-  exitKiosk(pin: string): Promise<{ ok: boolean; error?: string }>;
-  setKioskPin(pin: string): Promise<{ ok: boolean; error?: string }>;
+
+  // Session
+  loadSession(): Promise<PersistentSession | null>;
+  saveSession(s: PersistentSession): Promise<{ ok: boolean }>;
+  updateSession(
+    partial: Partial<PersistentSession>
+  ): Promise<{ ok: boolean; session: PersistentSession | null }>;
+  clearSession(): Promise<{ ok: boolean }>;
+
+  // Updater
+  checkUpdate(): Promise<void>;
+  getUpdateStatus(): Promise<UpdateStatus>;
+  onUpdaterStatus(cb: (status: UpdateStatus) => void): void;
+
   beep(): Promise<void>;
-  onBeforeQuit(cb: () => void): void;
 }

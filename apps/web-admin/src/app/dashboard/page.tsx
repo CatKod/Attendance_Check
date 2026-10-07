@@ -10,22 +10,32 @@ import {
   CalendarDays,
   Sparkles,
   Building2,
+  Monitor,
+  Smartphone,
 } from 'lucide-react';
 
 export default async function DashboardPage() {
   const supabase = createClient();
-
-  const { count: totalMembers } = await supabase
-    .from('users')
-    .select('id', { count: 'exact' });
-
   const today = new Date();
-  const todayStr = today.toISOString().split('T')[0];
-  const { count: presentToday } = await supabase
-    .from('attendance')
-    .select('id', { count: 'exact' })
-    .gte('check_in_time', `${todayStr}T00:00:00`)
-    .lte('check_in_time', `${todayStr}T23:59:59`);
+
+  const [
+    { count: totalMembers },
+    { count: presentToday },
+    { data: bindingCounts },
+  ] = await Promise.all([
+    supabase.from('users').select('id', { count: 'exact', head: true }),
+    supabase
+      .from('attendance')
+      .select('id', { count: 'exact', head: true })
+      .gte('check_in_time', `${new Date().toISOString().split('T')[0]}T00:00:00`)
+      .lte('check_in_time', `${new Date().toISOString().split('T')[0]}T23:59:59`),
+    supabase.rpc('count_active_bindings'),
+  ]);
+
+  const desktopActive =
+    bindingCounts?.find((b: any) => b.kind === 'desktop')?.active_count ?? 0;
+  const mobileActive =
+    bindingCounts?.find((b: any) => b.kind === 'mobile')?.active_count ?? 0;
 
   const total = totalMembers || 0;
   const present = presentToday || 0;
@@ -53,6 +63,20 @@ export default async function DashboardPage() {
       icon: UserX,
       tone: 'destructive' as const,
       hint: 'Chưa điểm danh',
+    },
+    {
+      label: 'Laptop liên kết',
+      value: desktopActive,
+      icon: Monitor,
+      tone: 'brand' as const,
+      hint: `${total > 0 ? Math.round((Number(desktopActive) / total) * 100) : 0}% thành viên`,
+    },
+    {
+      label: 'Mobile liên kết',
+      value: mobileActive,
+      icon: Smartphone,
+      tone: 'success' as const,
+      hint: 'Sẵn sàng điểm danh qua Wi-Fi',
     },
     {
       label: 'Buổi họp',
@@ -99,9 +123,9 @@ export default async function DashboardPage() {
     },
     {
       href: '/dashboard/members',
-      label: 'Thêm thành viên',
-      desc: 'Thêm vào danh sách Lab',
-      icon: Users,
+      label: 'Quản lý thiết bị',
+      desc: 'Reset binding của SV',
+      icon: Monitor,
     },
     {
       href: '/dashboard/sessions',
@@ -193,10 +217,10 @@ export default async function DashboardPage() {
           const Icon = stat.icon;
           const t = toneStyles[stat.tone];
           let barWidth = '0%';
-          if (stat.tone === 'brand') {
+          if (stat.tone === 'brand' && stat.label === 'Tổng thành viên') {
             barWidth = '100%';
           } else if (total > 0) {
-            barWidth = Math.min(100, (stat.value / total) * 100) + '%';
+            barWidth = Math.min(100, (Number(stat.value) / total) * 100) + '%';
           }
           return (
             <div key={stat.label} className="apes-stat-card">

@@ -14,8 +14,8 @@
 Attendance_Check/
 ├── apps/
 │   ├── web-admin/              # Next.js 14 - Web quản lý (Trưởng Lab / CN Lab)
-│   ├── desktop/                # Electron - Kiosk Windows tại lab  ★ THIẾT BỊ CHÍNH
-│   │   ├── src/main/           # main process: đọc MAC/IP, IPC, kiosk mode
+│   ├── desktop/                # Electron - App cá nhân cho mỗi SV ★ THIẾT BỊ CHÍNH
+│   │   ├── src/main/           # main process: MAC/IP, session Registry, auto-update
 │   │   ├── src/preload/        # contextBridge an toàn
 │   │   └── src/renderer/       # React UI + TailwindCSS
 │   └── mobile/                 # Expo (React Native) - App Android  ★ THIẾT BỊ PHỤ
@@ -31,16 +31,17 @@ Attendance_Check/
 │   │   ├── 20261003_init_schema.sql
 │   │   ├── 20261004_schedule.sql
 │   │   ├── 20261005_attendance_config.sql
-│   │   └── 20261006_device_linking.sql   # kiosk + QR token + chống 2 lần/ngày
+│   │   ├── 20261006_device_linking.sql   # kiosk + QR token + chống 2 lần/ngày
+│   │   └── 20261007_personal_app.sql     # hostname, disk_serial, mobile_linked_at, reset RPC
 │   ├── functions/
 │   │   ├── _shared/            # cors, supabase client, time helpers
-│   │   ├── verify-mssv/            # Xác thực MSSV + bind MAC
+│   │   ├── verify-mssv/            # Xác thực MSSV + bind MAC + fingerprint
 │   │   ├── generate-link-qr/       # Sinh QR liên kết Mobile (60s)
-│   │   ├── claim-mobile-binding/   # Mobile đổi QR → session
+│   │   ├── claim-mobile-binding/   # Mobile đổi QR → session (đánh dấu mobile_linked_at)
 │   │   └── check-attendance/       # Ghi nhận điểm danh
 │   └── seed_members.sql
 ├── scripts/
-│   └── inspect-kiosk.mjs       # Debug kiosk qua Chrome DevTools Protocol
+│   └── inspect-kiosk.mjs       # Debug desktop app qua Chrome DevTools Protocol
 ├── tests/
 │   └── shared-logic.test.ts    # Test subnet / cửa sổ điểm danh / QR
 └── package.json                # npm workspaces
@@ -49,17 +50,19 @@ Attendance_Check/
 ## 🔄 Luồng hoạt động
 
 ```
-LẦN ĐẦU                    HÀNG NGÀY
-─────────────────────      ─────────────────────────────
-1. Nhập MSSV trên Desktop  1. Mở Desktop hoặc Mobile
-2. Lưu MAC của kiosk    →  2. Nhấn "Điểm danh"
-3. Desktop sinh QR 60s      3. App gửi IP hiện tại
-4. Mobile quét QR           4. Server kiểm tra IP ∈ Wi-Fi lab
-5. Lưu Android ID          5. Ghi attendance + beep ✓
+LẦN ĐẦU                              HÀNG NGÀY
+─────────────────────────────         ─────────────────────────────
+1. Tải .exe từ web-admin              1. Mở Desktop app
+2. Nhập MSSV → bind MAC (Registry)    2. Auto vào Home (nhờ session)
+3. Sinh QR 60s (1 lần duy nhất)       3. Nhấn "ĐIỂM DANH HÔM NAY"
+4. Mobile quét QR                      4. Server kiểm IP ∈ Wi-Fi lab
+5. Mobile lưu Android ID vĩnh viễn    5. Ghi attendance + beep ✓
+                                       6. Ở lại Home (KHÔNG reset về nhập MSSV)
 ```
 
-> **Nguyên tắc:** Desktop là cổng xác thực vật lý. Mobile **không thể tự
-> đăng nhập** và **không có nút đăng xuất**.
+> **Phiên bản 0.2.0:** Desktop app là **app cá nhân** (1 SV = 1 laptop + 1 mobile).
+> Phiên đăng nhập lưu trong **Windows Registry** (`HKCU\Software\APES-Lab\Kiosk`).
+> Mobile sau khi liên kết sẽ **không bao giờ** hiện QR lại.
 
 ---
 
@@ -181,10 +184,11 @@ node scripts/inspect-kiosk.mjs --screenshot kiosk.png
 - [x] Edge Functions: verify-mssv, generate-link-qr, claim-mobile-binding, check-attendance
 - [x] Desktop App: nhập MSSV + MAC binding + QR liên kết + điểm danh + kiosk mode
 - [x] Mobile App: quét QR + liên kết + điểm danh Wi-Fi + hồ sơ
-- [ ] **Web Admin: trang Quản lý thiết bị (F-DEV-01..06)** ← kế tiếp
-- [ ] Desktop: màn hình nền 30s + auto-start Windows
+- [x] **Desktop v0.2.0: App cá nhân, lưu session Registry, auto-update từ GitHub**
+- [x] **Web Admin: Quản lý & reset device bindings**
+- [ ] Desktop: chống VM/MAC spoofing nâng cao (BSSID check)
 - [ ] Web Admin: báo cáo & thống kê (F-RPT-01..09)
-- [ ] Build `.exe` + `.apk`, đăng Google Play
+- [ ] Build `.exe` + `.apk`, đăng Google Play / GitHub Releases
 
 ---
 

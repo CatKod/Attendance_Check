@@ -5,13 +5,29 @@ import { Modal, ConfirmButton } from '@/components/ui/modal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { Plus, Pencil, Users, Search, UserPlus, KeyRound } from 'lucide-react';
+import {
+  Plus,
+  Pencil,
+  Users,
+  Search,
+  UserPlus,
+  KeyRound,
+  Monitor,
+  Smartphone,
+  RefreshCw,
+  X,
+} from 'lucide-react';
 import {
   createMember,
   updateMember,
   deleteMember,
   type MemberInput,
 } from '@/lib/actions/crud';
+import {
+  getMemberDevices,
+  resetDeviceBinding,
+  type DeviceBinding,
+} from '@/lib/actions/devices';
 
 type Group = { id: string; name: string };
 
@@ -60,6 +76,13 @@ export default function MembersManager({
   const [query, setQuery] = useState('');
   const [, startTransition] = useTransition();
 
+  // Quản lý thiết bị
+  const [devicesMember, setDevicesMember] = useState<Member | null>(null);
+  const [devices, setDevices] = useState<DeviceBinding[]>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
+  const [resetReason, setResetReason] = useState('');
+  const [resettingId, setResettingId] = useState<string | null>(null);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return initial;
@@ -80,6 +103,39 @@ export default function MembersManager({
   const openEdit = (u: Member) => {
     setEditing(u);
     setShowForm(true);
+  };
+
+  const openDevices = async (u: Member) => {
+    setDevicesMember(u);
+    setDevices([]);
+    setResetReason('');
+    setDevicesLoading(true);
+    try {
+      const list = await getMemberDevices(u.id);
+      setDevices(list as DeviceBinding[]);
+    } catch (e: any) {
+      alert(`Lỗi tải thiết bị: ${e.message ?? e}`);
+    } finally {
+      setDevicesLoading(false);
+    }
+  };
+
+  const handleResetBinding = async (bindingId: string) => {
+    const reason = prompt('Lý do reset (sẽ lưu vào audit log):', 'Sinh viên báo mất máy');
+    if (reason === null) return;
+    setResettingId(bindingId);
+    try {
+      await resetDeviceBinding(bindingId, reason);
+      // Reload danh sách
+      if (devicesMember) {
+        const list = await getMemberDevices(devicesMember.id);
+        setDevices(list as DeviceBinding[]);
+      }
+    } catch (e: any) {
+      alert(`Lỗi: ${e.message ?? e}`);
+    } finally {
+      setResettingId(null);
+    }
   };
 
   return (
@@ -194,6 +250,14 @@ export default function MembersManager({
                       {canEdit && (
                         <td>
                           <div className="flex justify-end gap-1.5">
+                            <button
+                              onClick={() => openDevices(u)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border/70 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-primary"
+                              aria-label={`Thiết bị của ${u.full_name}`}
+                              title="Quản lý thiết bị"
+                            >
+                              <Monitor className="h-3.5 w-3.5" />
+                            </button>
                             <button
                               onClick={() => openEdit(u)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border/70 text-muted-foreground transition-colors hover:border-primary/40 hover:bg-accent hover:text-primary"
@@ -428,6 +492,152 @@ export default function MembersManager({
           )}
         </form>
       </Modal>
+
+      {/* Modal: Quản lý thiết bị của sinh viên */}
+      <Modal
+        open={!!devicesMember}
+        onClose={() => setDevicesMember(null)}
+        title={`Thiết bị của ${devicesMember?.full_name ?? ''}`}
+        description={`MSSV ${devicesMember?.mssv ?? ''} · Quản lý máy tính và điện thoại đã liên kết`}
+        className="max-w-3xl"
+        footer={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setDevicesMember(null)}
+          >
+            Đóng
+          </Button>
+        }
+      >
+        {devicesLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-[#f04030]" />
+          </div>
+        ) : devices.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-6 py-10 text-center">
+            <Monitor className="mx-auto h-8 w-8 text-slate-300" />
+            <p className="mt-2 text-sm font-medium text-slate-600">
+              Chưa có thiết bị nào được liên kết
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Sinh viên cần đăng nhập Desktop app hoặc quét QR bằng Mobile để tạo binding.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {devices.map((b) => (
+              <DeviceCard
+                key={b.binding_id}
+                binding={b}
+                onReset={() => handleResetBinding(b.binding_id)}
+                resetting={resettingId === b.binding_id}
+              />
+            ))}
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function DeviceCard({
+  binding,
+  onReset,
+  resetting,
+}: {
+  binding: DeviceBinding;
+  onReset: () => void;
+  resetting: boolean;
+}) {
+  const isDesktop = binding.kind === 'desktop';
+  const Icon = isDesktop ? Monitor : Smartphone;
+  const statusTone =
+    binding.status === 'active'
+      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+      : binding.status === 'reset'
+        ? 'bg-amber-50 text-amber-700 ring-amber-200'
+        : 'bg-slate-100 text-slate-600 ring-slate-200';
+  const statusLabel =
+    binding.status === 'active'
+      ? 'Đang hoạt động'
+      : binding.status === 'reset'
+        ? 'Đã reset'
+        : 'Đã thu hồi';
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+              isDesktop
+                ? 'bg-blue-50 text-blue-600'
+                : 'bg-purple-50 text-purple-600'
+            }`}
+          >
+            <Icon className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="font-semibold text-foreground">
+                {isDesktop ? 'Laptop / Desktop' : 'Điện thoại'}
+              </p>
+              <span
+                className={`apes-badge ring-1 ring-inset ${statusTone}`}
+              >
+                {statusLabel}
+              </span>
+              {binding.mobile_linked_at && (
+                <span className="apes-badge bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200">
+                  Đã liên kết mobile
+                </span>
+              )}
+            </div>
+            <p className="mt-1 font-mono text-xs text-muted-foreground break-all">
+              {binding.device_identifier}
+            </p>
+            {binding.hostname && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Hostname: <span className="font-mono">{binding.hostname}</span>
+              </p>
+            )}
+            {binding.os_info && (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                OS: <span className="font-mono">{binding.os_info}</span>
+              </p>
+            )}
+            <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+              <span>
+                Liên kết: {new Date(binding.bound_at).toLocaleString('vi-VN')}
+              </span>
+              {binding.last_seen_at && (
+                <span>
+                  Hoạt động: {new Date(binding.last_seen_at).toLocaleString('vi-VN')}
+                </span>
+              )}
+            </div>
+            {binding.note && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Ghi chú: {binding.note}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {binding.status === 'active' && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onReset}
+            disabled={resetting}
+            className="shrink-0"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${resetting ? 'animate-spin' : ''}`} />
+            Reset
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

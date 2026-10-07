@@ -1,35 +1,53 @@
 # 🚀 Hướng dẫn cài đặt Desktop & Mobile App
 
-Tài liệu này hướng dẫn dựng **Desktop Kiosk (Electron)** và **Mobile App (Expo)**
+Tài liệu này hướng dẫn dựng **Desktop App cá nhân (Electron)** và **Mobile App (Expo)**
 theo `FUNCTIONAL_SPECIFICATION.md`.
+
+> **Phiên bản 0.2.0**: Desktop app đã chuyển từ **kiosk công cộng** sang
+> **app cá nhân cố định theo sinh viên**. Mỗi SV cài app trên laptop
+> của mình, app ghi nhớ MSSV + MAC và tự động đăng nhập các lần sau.
 
 ---
 
 ## 1. Kiến trúc luồng
 
 ```
-┌──────────────────────┐        ┌──────────────────────┐
-│  DESKTOP KIOSK       │        │  MOBILE APP          │
-│  (Electron, .exe)    │        │  (Expo, Android)     │
-│                      │        │                      │
-│  1. Nhập MSSV ───────┼───────►│  3. Quét QR          │
-│  2. Lưu MAC          │  QR    │  4. Lưu Android ID   │
-│  5. Điểm danh        │        │  6. Điểm danh (Wi-Fi) │
-└──────────┬───────────┘        └──────────┬───────────┘
-           │                               │
-           └───────────────┬───────────────┘
-                           ▼
+┌─────────────────────────────┐        ┌──────────────────────┐
+│  DESKTOP APP CÁ NHÂN        │        │  MOBILE APP          │
+│  (Electron, .exe)            │        │  (Expo, Android)     │
+│  Cài trên laptop từng SV     │        │                      │
+│                               │        │                      │
+│  Lần đầu:                    │        │  3. Quét QR          │
+│   1. Nhập MSSV ──────────────┼───────►│  4. Lưu Android ID   │
+│   2. Lưu MAC vào Registry   │  QR    │  5. Bind vĩnh viễn   │
+│                               │        │                      │
+│  Lần sau:                    │        │                      │
+│   Tự động nhận diện qua MAC  │        │                      │
+│   (không cần nhập lại)       │        │                      │
+│                               │        │                      │
+│  Mọi lần:                    │        │                      │
+│   - Điểm danh                │        │                      │
+│   - Auto-update từ GitHub    │        │                      │
+└──────────────┬────────────────┘        └──────────┬───────────┘
+               │                                  │
+               └──────────────┬──────────────────┘
+                              ▼
               ┌────────────────────────────┐
               │  Supabase                  │
-              │  • verify-mssv             │
+              │  • verify-mssv (bind MAC)  │
               │  • generate-link-qr        │
               │  • claim-mobile-binding    │
               │  • check-attendance        │
+              │  • reset_device_binding    │
               └────────────────────────────┘
 ```
 
-**Nguyên tắc bất di bất dịch:** Desktop là cổng xác thực vật lý.
-Mobile **không thể tự đăng nhập** — phải quét QR từ Desktop.
+**Nguyên tắc mới:**
+- Desktop là **app cá nhân** (1 SV = 1 laptop + 1 mobile).
+- Sau đăng nhập lần đầu, app **ghi nhớ phiên trong Windows Registry** (`HKCU\Software\APES-Lab\Kiosk`).
+- Lần mở sau: tự động vào app nếu MAC của máy khớp với session.
+- Khi mobile đã liên kết, **không hiện QR nữa** (chỉ hiện 1 lần duy nhất).
+- App **tự động cập nhật** khi có phiên bản mới trên GitHub Releases.
 
 ---
 
@@ -168,10 +186,10 @@ Nếu chưa cấu hình, **điểm danh sẽ luôn bị từ chối**:
 
 ---
 
-## 6. Chạy Desktop Kiosk
+## 6. Chạy Desktop App
 
 ```bash
-# Chế độ dev (Vite hot reload, cửa sổ 1280x800)
+# Chế độ dev (Vite hot reload)
 npm run dev:desktop
 
 # Chạy bản build (file tĩnh, không cần Vite)
@@ -186,20 +204,27 @@ npx electron .
 npm run dist:desktop
 ```
 
-Kết quả: `apps/desktop/release/APES-Lab-Kiosk-Setup-0.1.0.exe`
+Kết quả: `apps/desktop/release/APES-Lab-Kiosk-Setup-0.2.0.exe`
 
-### Kiosk mode (F-DESK-KIOSK)
+### Phân phối cho sinh viên
+
+1. Sau khi build, upload file `.exe` lên GitHub Releases
+   (cùng tag version, vd: `v0.2.0`).
+2. Sinh viên tải từ trang **Dashboard → Cài đặt → Tải ứng dụng**.
+4. Sau khi cài, SV mở app → nhập MSSV → bind MAC vĩnh viễn.
+
+### Tính năng phiên bản 0.2.0
 
 | Tính năng | Trạng thái |
 |---|---|
-| Fullscreen khi chạy bản đóng gói | ✅ |
-| Menu ẩn, không thoát bằng Alt+F4 | ✅ |
-| Thoát bằng PIN | ✅ (nút ⚙ → PIN) |
+| Auto-login qua MAC (lưu trong Registry) | ✅ |
+| Tự động đăng nhập các lần sau | ✅ |
+| Nút "Đăng xuất" rõ ràng | ✅ |
+| Sau điểm danh → ở lại Home | ✅ |
+| Mobile đã liên kết → ẩn QR vĩnh viễn | ✅ |
+| Thu thập hostname, OS, disk serial | ✅ |
+| Auto-update từ GitHub Releases | ✅ |
 | Đồng hồ + ngày realtime | ✅ |
-| Màn hình nền sau 30s không tương tác | ⏳ Phase sau |
-| Auto-start cùng Windows | ⏳ Cài shortcut vào Startup |
-
-Đổi PIN: sửa `KIOSK_PIN` trong `.env` (4–8 chữ số).
 
 ---
 
@@ -241,6 +266,59 @@ Kết quả: `android/app/build/outputs/apk/release/app-release.apk`
 
 ---
 
+## 7b. Auto-update Desktop từ GitHub Releases
+
+App tự động kiểm tra bản cập nhật mỗi khi khởi động (sau 5s).
+Khi có phiên bản mới, dialog sẽ hiện để hỏi SV có muốn cập nhật ngay không.
+
+### Quy trình phát hành bản mới
+
+```bash
+# 1. Tăng version trong apps/desktop/package.json
+#    "version": "0.2.0" → "0.3.0"
+
+# 2. Build file .exe
+npm run dist:desktop
+
+# 3. Tạo GitHub Release với tag = version (KHÔNG có prefix 'v')
+#    Ví dụ: tag = "0.3.0"
+#    Upload file: APES-Lab-Kiosk-Setup-0.3.0.exe
+#    Publish release (KHÔNG phải draft)
+```
+
+### Cấu hình trong `apps/desktop/package.json`
+
+```json
+{
+  "build": {
+    "publish": {
+      "provider": "github",
+      "owner": "apes-lab",
+      "repo": "attendance-check"
+    }
+  }
+}
+```
+
+Lưu ý: Khi build bằng `electron-builder`, nó sẽ tự động tạo file `latest.yml` chứa metadata. File này cần upload cùng với `.exe` lên GitHub Release.
+
+---
+
+## 7c. Reset binding từ Web-Admin
+
+Khi SV bị mất/mượn laptop khác, Trưởng Lab có thể reset binding:
+
+1. Đăng nhập web-admin
+2. Vào **Thành viên**
+3. Bấm biểu tượng máy tính bên cạnh SV cần reset
+4. Trong modal **Thiết bị**, bấm **Reset** trên binding cần reset
+5. Nhập lý do (sẽ lưu vào audit log)
+6. SV mở app trên máy mới → nhập lại MSSV → bind thành công
+
+RPC `reset_device_binding(binding_id, reason)` được gọi qua Server Action `resetDeviceBinding`. Chỉ role `lab_leader` / `lab_manager` mới có quyền.
+
+---
+
 ## 8. Kiểm thử
 
 ```bash
@@ -268,12 +346,15 @@ Script sẽ in ra IP, MAC thật của máy và ảnh chụp giao diện.
 
 ### Desktop
 
-1. Mở kiosk → nhập `20232276` → Enter
-2. Màn hình hiện **QR đếm ngược 60 giây**
-   - Bấm **Bỏ qua** nếu chưa cần liên kết Mobile
+1. Mở app lần đầu → nhập `20232276` → Enter
+2. Nếu mobile chưa liên kết: hiện **QR đếm ngược 60 giây**
+   - Bấm **Để sau, điểm danh trước** nếu chưa cần liên kết Mobile
    - Bấm **Tạo mã mới** để làm mới QR
-3. Nhấn **ĐIỂM DANH HÔM NAY**
-4. Xem kết quả ✓ / ✗, tự về màn nhập MSSV sau 5 giây
+3. Sau khi mobile liên kết thành công → app tự chuyển sang Home
+4. Nhấn **ĐIỂM DANH HÔM NAY**
+5. Xem kết quả ✓ / ✗, **ở lại Home** sau 5 giây (KHÔNG reset về nhập MSSV)
+6. Bấm nút **Đăng xuất** (icon ở góc phải header) → xoá session, về màn nhập MSSV
+7. Tắt app, mở lại → tự động vào Home (nhờ session trong Registry)
 
 ### Mobile
 

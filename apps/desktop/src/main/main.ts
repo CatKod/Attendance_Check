@@ -1,14 +1,15 @@
 // ============================================================
-// Electron Main Process - APES Lab Kiosk
+// Electron Main Process - APES Lab Personal App
 // ============================================================
-// Chức năng chính:
-//   - Đọc MAC + IP của card mạng đang dùng (F-DESK-CFG-03)
-//   - Gọi Edge Function verify-mssv để xác thực MSSV (F-DESK-AUTH)
-//   - Sinh QR liên kết Mobile (F-DESK-AUTH-05)
-//   - Chế độ kiosk: fullscreen, khóa thoát bằng PIN (F-DESK-KIOSK)
+// Thay đổi so với phiên bản kiosk cũ:
+//   - BỎ: chế độ kiosk (fullscreen, PIN, chặn thoát)
+//   - THÊM: đọc/ghi session vào Windows Registry
+//   - THÊM: thu thập fingerprint (hostname, OS, disk serial)
+//   - THÊM: auto-update từ GitHub Releases (electron-updater)
+//   - THÊM: kiểm tra session hợp lệ trước khi vào app
 // ============================================================
 
-import { app, BrowserWindow, ipcMain, shell, dialog, globalShortcut } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -18,23 +19,19 @@ import {
   assertConfig,
   pickPrimaryIPv4,
   listIPv4s,
-  normalizeMac,
   type AppConfig,
   type NetworkInterfaceInfo,
 } from '@apes/shared-types';
+import { session, type PersistentSession } from './session';
+import { getMachineFingerprint } from './fingerprint';
+import { initUpdater, checkForUpdate, getStatus } from './updater';
 
-/**
- * Chế độ chạy:
- *  - Mặc định: `!app.isPackaged` → dùng Vite dev server.
- *  - Đặt KIOSK_FORCE_PROD=1 để chạy thử bản build (load file tĩnh) mà
- *    không cần đóng gói. Hữu ích khi kiểm thử trên máy lab.
- */
 const isDev =
   !app.isPackaged && process.env.KIOSK_FORCE_PROD !== '1';
 const DEV_URL = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
 
 // ------------------------------------------------------------
-// Config: đọc từ file env cạnh app (dễ chỉnh khi triển khai lab)
+// Config loader
 // ------------------------------------------------------------
 function loadConfig(): AppConfig {
   const candidates = [
@@ -67,7 +64,7 @@ let config: AppConfig;
 let mainWindow: BrowserWindow | null = null;
 
 // ------------------------------------------------------------
-// Network helpers
+// Network info
 // ------------------------------------------------------------
 interface NetworkInfo {
   ip: string;
@@ -80,9 +77,17 @@ function getNetworkInfo(): NetworkInfo {
   const ifaces = os.networkInterfaces() as unknown as NetworkInterfaceInfo;
   const primary = pickPrimaryIPv4(ifaces);
 
+  // Normalize MAC về dạng aa:bb:cc:dd:ee:ff
+  const rawMac = primary?.mac ?? '';
+  const mac = rawMac
+    .toLowerCase()
+    .split(':')
+    .map((p) => p.padStart(2, '0'))
+    .join(':');
+
   return {
     ip: primary?.ip ?? '',
-    mac: primary?.mac ?? normalizeMac(os.hostname()) ?? '',
+    mac,
     interface: primary?.iface ?? '',
     allIps: listIPv4s(ifaces),
   };
@@ -115,11 +120,15 @@ async function callFunction<T>(
 // ------------------------------------------------------------
 function createWindow(): void {
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    fullscreen: isDev ? false : true,
+    width: 1100,
+    height: 760,
+    minWidth: 900,
+    minHeight: 600,
+    // KHÔNG fullscreen — app cá nhân, user tự quản lý cửa sổ
+    fullscreen: false,
     autoHideMenuBar: true,
     backgroundColor: '#ffffff',
+    title: 'APES Lab',
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -134,7 +143,7 @@ function createWindow(): void {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
-  // Chặn mở link ra ngoài
+  // Mở link ngoài trong trình duyệt
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: 'deny' };
@@ -146,36 +155,20 @@ function createWindow(): void {
 }
 
 // ------------------------------------------------------------
-// Kiosk mode (F-DESK-KIOSK-01, F-DESK-KIOSK-06)
-// ------------------------------------------------------------
-let kioskPin = process.env.KIOSK_PIN ?? '1234';
-
-function enterKioskMode(): void {
-  mainWindow?.setFullScreen(true);
-  mainWindow?.setMenu(null);
-}
-
-function exitKioskMode(): void {
-  if (isDev) return;
-  mainWindow?.setFullScreen(false);
-  app.quit();
-}
-
-// ------------------------------------------------------------
 // IPC Handlers
 // ------------------------------------------------------------
 function registerIpc(): void {
-  // Lấy thông tin mạng của máy
+  // Thông tin mạng
   ipcMain.handle('network:info', () => getNetworkInfo());
 
-  // Lấy cấu hình (không lộ service role key)
+  // Cấu hình
   ipcMain.handle('app:config', () => ({
     labName: config.labName,
     functionsUrl: config.functionsUrl,
     supabaseUrl: config.supabaseUrl,
   }));
 
-  // Kiểm tra kết nối tới Supabase (F-DESK-CFG-04)
+  // Kiểm tra kết nối Supabase
   ipcMain.handle('app:test-connection', async () => {
     try {
       assertConfig(config);
@@ -188,15 +181,34 @@ function registerIpc(): void {
     }
   });
 
-  // Xác thực MSSV
+  // Session management
+  ipcMain.handle('session:load', () => session.read());
+  ipcMain.handle('session:save', (_e, s: PersistentSession) => {
+    session.write(s);
+    return { ok: true };
+  });
+  ipcMain.handle('session:update', (_e, partial: Partial<PersistentSession>) => {
+    const updated = session.update(partial);
+    return { ok: !!updated, session: updated };
+  });
+  ipcMain.handle('session:clear', () => {
+    session.clear();
+    return { ok: true };
+  });
+
+  // Xác thực MSSV — gửi kèm fingerprint
   ipcMain.handle('auth:verify-mssv', async (_e, mssv: string) => {
     const net = getNetworkInfo();
+    const fp = getMachineFingerprint();
     if (!net.mac) {
       return { error: 'Không đọc được địa chỉ MAC của máy này.' };
     }
     return callFunction('verify-mssv', {
       mssv,
       mac_address: net.mac,
+      hostname: fp.hostname,
+      os_info: fp.osInfo,
+      disk_serial: fp.diskSerial,
     });
   });
 
@@ -213,7 +225,6 @@ function registerIpc(): void {
       return { error: data.error ?? 'Không tạo được mã QR' };
     }
 
-    // Render QR thành data URL để hiển thị
     const dataUrl = await QRCode.toDataURL((data as any).payload, {
       width: 420,
       margin: 2,
@@ -237,28 +248,14 @@ function registerIpc(): void {
     });
   });
 
-  // Thoát kiosk bằng PIN (F-DESK-KIOSK-06)
-  ipcMain.handle('kiosk:exit', (_e, pin: string) => {
-    if (pin === kioskPin) {
-      exitKioskMode();
-      return { ok: true };
-    }
-    return { ok: false, error: 'Mã PIN không đúng' };
-  });
-
-  // Đổi mã PIN (F-DESK-CFG-02)
-  ipcMain.handle('kiosk:set-pin', (_e, pin: string) => {
-    if (!/^\d{4,8}$/.test(pin)) {
-      return { ok: false, error: 'PIN phải gồm 4-8 chữ số' };
-    }
-    kioskPin = pin;
-    return { ok: true };
-  });
-
-  // Phát tiếng beep sau khi điểm danh (F-DESK-ATT-04)
+  // Phát beep
   ipcMain.handle('app:beep', () => {
     mainWindow?.webContents.send('app:beep');
   });
+
+  // Updater
+  ipcMain.handle('updater:check', () => checkForUpdate());
+  ipcMain.handle('updater:status', () => getStatus());
 }
 
 // ------------------------------------------------------------
@@ -277,30 +274,27 @@ app.whenReady().then(() => {
 
   registerIpc();
   createWindow();
-  enterKioskMode();
+
+  // Khởi tạo auto-update (chỉ khi đã đóng gói, không phải dev)
+  if (!isDev) {
+    initUpdater(mainWindow);
+    // Kiểm tra cập nhật sau 5s (để app load trước)
+    setTimeout(() => {
+      void checkForUpdate();
+    }, 5000);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
-// Chặn đóng cửa sổ khi đang ở kiosk mode
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' || !isDev) app.quit();
+  app.quit();
 });
 
-// Chặn Alt+F4 / Ctrl+Q khi ở kiosk mode
-app.on('before-quit', (e) => {
-  if (isDev) return;
-  e.preventDefault();
-  mainWindow?.webContents.send('kiosk:before-quit');
-});
-
-if (process.platform === 'win32') {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
+// Đảm bảo chỉ chạy 1 instance (quan trọng cho Registry session)
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
 }

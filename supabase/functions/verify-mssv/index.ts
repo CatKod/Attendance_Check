@@ -21,6 +21,10 @@ import { vietnamDayOfWeek, formatWindows } from '../_shared/time.ts';
 interface Body {
   mssv: string;
   mac_address: string;
+  /** Tùy chọn — thông tin bổ sung để bảo mật & audit */
+  hostname?: string;
+  os_info?: string;
+  disk_serial?: string;
 }
 
 Deno.serve(async (req: Request) => {
@@ -32,7 +36,8 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { mssv, mac_address } = (await req.json()) as Body;
+    const { mssv, mac_address, hostname, os_info, disk_serial } =
+      (await req.json()) as Body;
 
     if (!mssv || !mac_address) {
       return jsonResponse({ error: 'Thiếu mssv hoặc mac_address' }, 400);
@@ -106,6 +111,9 @@ Deno.serve(async (req: Request) => {
         device_identifier: mac,
         status: 'active',
         bound_at: new Date().toISOString(),
+        hostname: hostname ?? null,
+        os_info: os_info ?? null,
+        disk_serial: disk_serial ?? null,
       });
       if (insErr) {
         return jsonResponse({ error: 'Không thể lưu liên kết thiết bị: ' + insErr.message }, 500);
@@ -119,6 +127,9 @@ Deno.serve(async (req: Request) => {
           device_identifier: mac,
           status: 'active',
           bound_at: new Date().toISOString(),
+          hostname: hostname ?? null,
+          os_info: os_info ?? null,
+          disk_serial: disk_serial ?? null,
           reset_reason: null,
           reset_at: null,
           reset_by: null,
@@ -129,10 +140,15 @@ Deno.serve(async (req: Request) => {
       }
       bindingAction = 'reset_rebind';
     } else if (existing.device_identifier.toLowerCase() === mac) {
-      // 3c) MAC khớp → OK
+      // 3c) MAC khớp → cập nhật thông tin máy + last_seen
       await supabase
         .from('device_bindings')
-        .update({ last_seen_at: new Date().toISOString() })
+        .update({
+          last_seen_at: new Date().toISOString(),
+          hostname: hostname ?? null,
+          os_info: os_info ?? null,
+          disk_serial: disk_serial ?? null,
+        })
         .eq('id', existing.id);
       bindingAction = 'reused';
     } else {
@@ -170,12 +186,29 @@ Deno.serve(async (req: Request) => {
       for_day_of_week: todayDow,
     });
 
+    // 6) Kiểm tra mobile đã liên kết chưa (F-DESK-AUTH-05 vĩnh viễn)
+    //    Nếu mobile đã liên kết rồi, Desktop sẽ KHÔNG hiện QR nữa
+    const { data: mobileBinding } = await supabase
+      .from('device_bindings')
+      .select('id, device_identifier, status, bound_at, mobile_linked_at')
+      .eq('user_id', u.id)
+      .eq('kind', 'mobile')
+      .eq('status', 'active')
+      .maybeSingle();
+
+    const mobileLinked = !!mobileBinding;
+
     await supabase.from('audit_logs').insert({
       actor_id: u.id,
       action: 'desktop_auth_success',
       entity: 'user',
       entity_id: u.id,
-      payload: { mac, binding: bindingAction },
+      payload: {
+        mac,
+        binding: bindingAction,
+        hostname: hostname ?? null,
+        mobile_linked: mobileLinked,
+      },
     });
 
     return jsonResponse({
@@ -191,6 +224,8 @@ Deno.serve(async (req: Request) => {
         group_name: groupName,
       },
       mac_address: mac,
+      hostname: hostname ?? null,
+      mobile_linked: mobileLinked,
       today_windows: formatWindows(windows),
       day_of_week: todayDow,
     });

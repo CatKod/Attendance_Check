@@ -1,12 +1,18 @@
 // ============================================================
-// APES Lab Kiosk - UI chính
+// APES Lab - Personal App UI
 // ============================================================
-// Luồng màn hình (F-DESK):
-//   1. MỞ      → nhập MSSV  (F-DESK-AUTH-01)
-//   2. QR      → sinh QR liên kết Mobile 60s (F-DESK-AUTH-05)
-//   3. ĐIỂM DANH → nút lớn "Điểm danh hôm nay" (F-DESK-ATT-01)
-//   4. KẾT QUẢ → ✓ tên + giờ, tự về màn 1 sau 5s (F-DESK-KIOSK-05)
-//   5. CẤU HÌNH → PIN để quản trị (F-DESK-CFG-02/03/04)
+// Luồng màn hình (PHẦN MỚI - App cá nhân cố định theo SV):
+//   1. LOADING    → đọc session từ Registry, kiểm tra MAC
+//   2. MSSV       → nhập MSSV (lần đầu, hoặc khi session không hợp lệ)
+//   3. QR         → sinh QR liên kết Mobile (chỉ hiện khi mobile chưa link)
+//   4. HOME       → màn chính sau khi đăng nhập
+//   5. RESULT     → kết quả điểm danh (5s → về HOME, không reset)
+//   6. LOGOUT     → xác nhận đăng xuất
+//
+// Điểm khác biệt so với bản kiosk cũ:
+//   - KHÔNG tự reset về màn MSSV sau điểm danh → ở lại HOME
+//   - Có nút "Đăng xuất" ở góc
+//   - Tự động đăng nhập nếu session hợp lệ (cùng MAC)
 // ============================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -23,8 +29,10 @@ import type {
   CheckinWindow as Win,
   KioskBridge,
   NetworkInfo,
+  PersistentSession,
   QrResult,
   Student,
+  UpdateStatus,
 } from './types';
 
 declare global {
@@ -33,7 +41,7 @@ declare global {
   }
 }
 
-type Screen = 'mssv' | 'qr' | 'home' | 'result' | 'settings' | 'pin';
+type Screen = 'loading' | 'mssv' | 'qr' | 'home' | 'result' | 'logout' | 'settings';
 
 const ROLE_LABEL: Record<string, string> = {
   student: 'Sinh viên',
@@ -43,7 +51,7 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default function App() {
-  const [screen, setScreen] = useState<Screen>('mssv');
+  const [screen, setScreen] = useState<Screen>('loading');
   const [clock, setClock] = useState(new Date());
   const [net, setNet] = useState<NetworkInfo | null>(null);
   const [labName, setLabName] = useState('APES Lab');
@@ -54,6 +62,7 @@ export default function App() {
   const [shake, setShake] = useState(false);
 
   const [student, setStudent] = useState<Student | null>(null);
+  const [session, setSession] = useState<PersistentSession | null>(null);
   const [windows, setWindows] = useState<Win[]>([]);
 
   const [qr, setQr] = useState<QrResult | null>(null);
@@ -62,32 +71,91 @@ export default function App() {
   const [attending, setAttending] = useState(false);
   const [result, setResult] = useState<AttendanceResult | null>(null);
 
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [connOk, setConnOk] = useState<boolean | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const resetTimer = useRef<number | null>(null);
 
   // ------------------------------------------------------------
-  // Khởi tạo: lấy thông tin mạng + cấu hình
+  // Khởi tạo: load session, network info, config
   // ------------------------------------------------------------
   useEffect(() => {
     (async () => {
       try {
-        const [info, cfg] = await Promise.all([
+        const [info, cfg, sess] = await Promise.all([
           window.kiosk.getNetworkInfo(),
           window.kiosk.getConfig(),
+          window.kiosk.loadSession(),
         ]);
         setNet(info);
         setLabName(cfg.labName);
+
+        if (sess) {
+          // So sánh MAC của session với MAC hiện tại
+          if (sess.mac === info.mac) {
+            // Hợp lệ → auto-login
+            setSession(sess);
+            setStudent({
+              id: sess.userId,
+              mssv: sess.mssv,
+              full_name: sess.fullName,
+              khoa: '',
+              role: 'student',
+              group_name: null,
+            });
+            // Gọi lại verify để lấy windows + check mobile_linked
+            await refreshUserInfo(sess);
+            setScreen('home');
+            return;
+          } else {
+            // MAC khác → xoá session, yêu cầu đăng nhập lại
+            await window.kiosk.clearSession();
+            setError(
+              'Phiên đăng nhập cũ thuộc về máy khác. Vui lòng đăng nhập lại.'
+            );
+          }
+        }
+        setScreen('mssv');
       } catch (e) {
         console.error('init failed', e);
+        setError('Không khởi tạo được ứng dụng: ' + (e as Error).message);
+        setScreen('mssv');
       }
     })();
+
+    // Lắng nghe updater status
+    window.kiosk.onUpdaterStatus(setUpdateStatus);
   }, []);
 
-  // Đồng hồ realtime (F-DESK-KIOSK-02)
+  /**
+   * Refresh thông tin user từ server: lấy lại windows hôm nay,
+   * check mobile đã liên kết chưa.
+   * Không cần truyền password — server chỉ cần user_id.
+   */
+  const refreshUserInfo = useCallback(async (sess: PersistentSession) => {
+    try {
+      // Gọi verify-mssv với mssv của session để lấy lại windows + mobile_linked
+      // (Edge Function sẽ trả về vì MAC khớp, không tạo binding mới)
+      const { data } = await window.kiosk.verifyMssv(sess.mssv);
+      if (data.success && data.user) {
+        setStudent(data.user);
+        setWindows(data.today_windows ?? []);
+        if (data.mobile_linked !== undefined) {
+          const updated: PersistentSession = {
+            ...sess,
+            mobileLinked: data.mobile_linked,
+          };
+          await window.kiosk.saveSession(updated);
+          setSession(updated);
+        }
+      }
+    } catch (e) {
+      console.error('refresh failed', e);
+    }
+  }, []);
+
+  // Đồng hồ realtime
   useEffect(() => {
     const t = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(t);
@@ -110,7 +178,6 @@ export default function App() {
       );
       setQrSeconds(left);
       if (left === 0) {
-        // Hết hạn → sinh mã mới
         void regenerateQr();
       }
     };
@@ -119,56 +186,62 @@ export default function App() {
     return () => clearInterval(t);
   }, [screen, qr?.expires_at]);
 
-  // Chặn thoát kiosk
-  useEffect(() => {
-    window.kiosk.onBeforeQuit(() => {
-      setScreen('pin');
-    });
-  }, []);
-
   // ------------------------------------------------------------
-  // Bước 1: Xác thực MSSV
+  // Bước 1: Xác thực MSSV (lần đầu)
   // ------------------------------------------------------------
-  const submitMssv = useCallback(
-    async (value: string) => {
-      const code = normalizeMssv(value);
-      if (!code) return;
+  const submitMssv = useCallback(async (value: string) => {
+    const code = normalizeMssv(value);
+    if (!code) return;
 
-      if (!isValidMssv(code)) {
-        setError('MSSV không hợp lệ (cần 8-10 ký tự)');
+    if (!isValidMssv(code)) {
+      setError('MSSV không hợp lệ (cần 8-10 ký tự)');
+      setShake(true);
+      setTimeout(() => setShake(false), 400);
+      return;
+    }
+
+    setVerifying(true);
+    setError(null);
+
+    try {
+      const { data } = await window.kiosk.verifyMssv(code);
+
+      if (!data.success || !data.user) {
+        setError(data.error ?? 'Xác thực thất bại');
         setShake(true);
         setTimeout(() => setShake(false), 400);
+        setVerifying(false);
         return;
       }
 
-      setVerifying(true);
-      setError(null);
+      // Lưu session vào Registry
+      const newSession: PersistentSession = {
+        mssv: code,
+        userId: data.user.id,
+        mac: data.mac_address ?? net?.mac ?? '',
+        fullName: data.user.full_name,
+        boundAt: new Date().toISOString(),
+        mobileLinked: data.mobile_linked ?? false,
+        hostname: data.hostname ?? undefined,
+      };
+      await window.kiosk.saveSession(newSession);
+      setSession(newSession);
+      setStudent(data.user);
+      setWindows(data.today_windows ?? []);
+      setMssv('');
+      setVerifying(false);
 
-      try {
-        const { data } = await window.kiosk.verifyMssv(code);
-
-        if (!data.success || !data.user) {
-          setError(data.error ?? 'Xác thực thất bại');
-          setShake(true);
-          setTimeout(() => setShake(false), 400);
-          setVerifying(false);
-          return;
-        }
-
-        setStudent(data.user);
-        setWindows(data.today_windows ?? []);
-        setMssv('');
-        setVerifying(false);
-
-        // Sinh QR liên kết Mobile ngay sau khi xác thực (F-DESK-AUTH-05)
+      // Nếu mobile chưa liên kết → sinh QR; ngược lại vào Home luôn
+      if (!newSession.mobileLinked) {
         await regenerateQrFor(data.user.id);
-      } catch (e) {
-        setError((e as Error).message);
-        setVerifying(false);
+      } else {
+        setScreen('home');
       }
-    },
-    []
-  );
+    } catch (e) {
+      setError((e as Error).message);
+      setVerifying(false);
+    }
+  }, [net?.mac]);
 
   // ------------------------------------------------------------
   // Bước 2: Sinh QR
@@ -215,14 +288,11 @@ export default function App() {
       }
       setScreen('result');
 
-      // Tự về màn nhập MSSV sau 5s (F-DESK-KIOSK-05)
+      // Sau 5s → về HOME (giữ nguyên session), KHÔNG reset về MSSV
       if (resetTimer.current) window.clearTimeout(resetTimer.current);
       resetTimer.current = window.setTimeout(() => {
-        setScreen('mssv');
-        setStudent(null);
-        setQr(null);
+        setScreen('home');
         setResult(null);
-        setError(null);
       }, 5000);
     } catch (e) {
       setError((e as Error).message);
@@ -233,21 +303,30 @@ export default function App() {
   }, [student, attending]);
 
   // ------------------------------------------------------------
-  // Bước 4: PIN quản trị
+  // Đăng xuất
   // ------------------------------------------------------------
-  const submitPin = useCallback(async () => {
-    const res = await window.kiosk.exitKiosk(pinInput);
-    if (res.ok) {
-      setPinError(null);
-      return; // app sẽ tự đóng
-    }
-    setPinError(res.error ?? 'Mã PIN không đúng');
-    setPinInput('');
-  }, [pinInput]);
+  const doLogout = useCallback(async () => {
+    if (resetTimer.current) window.clearTimeout(resetTimer.current);
+    await window.kiosk.clearSession();
+    setSession(null);
+    setStudent(null);
+    setQr(null);
+    setResult(null);
+    setMssv('');
+    setError(null);
+    setWindows([]);
+    setScreen('mssv');
+  }, []);
 
   const checkConnection = useCallback(async () => {
     const res = await window.kiosk.testConnection();
     setConnOk(res.ok);
+  }, []);
+
+  const checkUpdate = useCallback(async () => {
+    await window.kiosk.checkUpdate();
+    const status = await window.kiosk.getUpdateStatus();
+    setUpdateStatus(status);
   }, []);
 
   const status = getCheckinStatus(windows as CheckinWindow[], clock);
@@ -255,16 +334,30 @@ export default function App() {
   // ------------------------------------------------------------
   // Render
   // ------------------------------------------------------------
+  if (screen === 'loading') {
+    return (
+      <div className="flex h-screen items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="mx-auto h-12 w-12 animate-spin rounded-full border-4 border-slate-200 border-t-[#f04030]" />
+          <p className="mt-4 text-sm text-slate-500">Đang tải…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen flex-col">
       <Header
         labName={labName}
         clock={clock}
         net={net}
+        student={student}
+        updateStatus={updateStatus}
         onOpenSettings={() => {
           setScreen('settings');
           void checkConnection();
         }}
+        onLogout={doLogout}
       />
 
       <main className="flex-1 overflow-hidden">
@@ -288,6 +381,18 @@ export default function App() {
             student={student}
             onSkip={skipQr}
             onRegenerate={regenerateQr}
+            onLinked={async () => {
+              // Mobile đã claim QR thành công → cập nhật session, vào Home
+              if (session) {
+                const updated: PersistentSession = {
+                  ...session,
+                  mobileLinked: true,
+                };
+                await window.kiosk.saveSession(updated);
+                setSession(updated);
+              }
+              setScreen('home');
+            }}
           />
         )}
 
@@ -299,7 +404,22 @@ export default function App() {
             attending={attending}
             onAttend={doAttendance}
             error={error}
-            onNewQr={regenerateQr}
+            mobileLinked={session?.mobileLinked ?? false}
+            onNewQr={async () => {
+              if (session?.mobileLinked) {
+                // Mobile đã link → xác nhận với user trước khi sinh QR mới
+                if (
+                  window.confirm(
+                    'Điện thoại đã được liên kết. Bạn có chắc muốn tạo lại mã QR? (Chỉ dùng khi muốn đổi điện thoại — cần liên hệ Trưởng Lab trước).'
+                  )
+                ) {
+                  await regenerateQrFor(student.id);
+                }
+              } else {
+                await regenerateQrFor(student.id);
+              }
+            }}
+            onCheckUpdate={checkUpdate}
           />
         )}
 
@@ -309,9 +429,7 @@ export default function App() {
             result={result}
             onDone={() => {
               if (resetTimer.current) window.clearTimeout(resetTimer.current);
-              setScreen('mssv');
-              setStudent(null);
-              setQr(null);
+              setScreen('home');
               setResult(null);
             }}
           />
@@ -321,31 +439,18 @@ export default function App() {
           <SettingsScreen
             net={net}
             labName={labName}
+            session={session}
+            updateStatus={updateStatus}
             connOk={connOk}
-            onBack={() => setScreen('mssv')}
+            onBack={() => setScreen(session ? 'home' : 'mssv')}
             onRecheck={checkConnection}
-          />
-        )}
-
-        {screen === 'pin' && (
-          <PinScreen
-            value={pinInput}
-            setValue={(v) => {
-              setPinInput(v);
-              setPinError(null);
-            }}
-            error={pinError}
-            onSubmit={submitPin}
-            onCancel={() => {
-              setScreen('mssv');
-              setPinInput('');
-              setPinError(null);
-            }}
+            onCheckUpdate={checkUpdate}
+            onLogout={doLogout}
           />
         )}
       </main>
 
-      <Footer net={net} labName={labName} />
+      <Footer net={net} labName={labName} student={student} />
     </div>
   );
 }
@@ -358,12 +463,18 @@ function Header({
   labName,
   clock,
   net,
+  student,
+  updateStatus,
   onOpenSettings,
+  onLogout,
 }: {
   labName: string;
   clock: Date;
   net: NetworkInfo | null;
+  student: Student | null;
+  updateStatus: UpdateStatus | null;
   onOpenSettings: () => void;
+  onLogout: () => void;
 }) {
   const time = clock.toLocaleTimeString('vi-VN', {
     hour: '2-digit',
@@ -384,7 +495,9 @@ function Header({
         </div>
         <div>
           <p className="text-sm font-semibold text-slate-900">{labName}</p>
-          <p className="text-[11px] text-slate-500">Điểm danh sinh viên</p>
+          <p className="text-[11px] text-slate-500">
+            {student ? `${student.full_name} · ${student.mssv}` : 'Điểm danh sinh viên'}
+          </p>
         </div>
       </div>
 
@@ -398,6 +511,11 @@ function Header({
       </div>
 
       <div className="flex items-center gap-3">
+        {updateStatus?.state === 'downloaded' && (
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
+            ● Có bản cập nhật mới
+          </span>
+        )}
         <div className="text-right">
           <p
             className={`text-xs font-semibold ${net?.ip ? 'text-emerald-600' : 'text-red-500'}`}
@@ -408,6 +526,15 @@ function Header({
             {net?.ip ?? '—'}
           </p>
         </div>
+        {student && (
+          <button
+            onClick={onLogout}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+            title="Đăng xuất"
+          >
+            Đăng xuất
+          </button>
+        )}
         <button
           onClick={onOpenSettings}
           className="rounded-lg border border-slate-200 p-2 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
@@ -449,7 +576,7 @@ function MssvScreen({
           Nhập MSSV để bắt đầu
         </h1>
         <p className="mt-2 text-slate-500">
-          Nhập mã số sinh viên của bạn để xác thực và điểm danh
+          Sau lần đầu, máy này sẽ tự động đăng nhập cho bạn.
         </p>
 
         <form
@@ -518,13 +645,28 @@ function QrScreen({
   student,
   onSkip,
   onRegenerate,
+  onLinked,
 }: {
   qr: QrResult | null;
   seconds: number;
   student: Student;
   onSkip: () => void;
   onRegenerate: () => void;
+  onLinked: () => void;
 }) {
+  // Tự động quay về home sau khi mobile claim (poll mỗi 3s)
+  useEffect(() => {
+    if (!student) return;
+    const t = setInterval(async () => {
+      // Gọi lại verify-mssv để check mobile_linked
+      const { data } = await window.kiosk.verifyMssv(student.mssv);
+      if (data.mobile_linked) {
+        onLinked();
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [student, onLinked]);
+
   return (
     <div className="flex h-full flex-col items-center justify-center px-6">
       <div className="w-full max-w-lg text-center">
@@ -570,7 +712,7 @@ function QrScreen({
         </div>
 
         <p className="mt-3 text-xs text-slate-400">
-          Mở app APES Lab trên điện thoại và quét mã này để liên kết
+          Mở app APES Lab trên điện thoại và quét mã này để liên kết. QR sẽ tự ẩn sau khi điện thoại liên kết thành công.
         </p>
 
         <div className="mt-6 flex justify-center gap-3">
@@ -599,7 +741,9 @@ function HomeScreen({
   attending,
   onAttend,
   error,
+  mobileLinked,
   onNewQr,
+  onCheckUpdate,
 }: {
   student: Student;
   net: NetworkInfo | null;
@@ -607,7 +751,9 @@ function HomeScreen({
   attending: boolean;
   onAttend: () => void;
   error: string | null;
+  mobileLinked: boolean;
   onNewQr: () => void;
+  onCheckUpdate: () => void;
 }) {
   const canAttend = status.state === 'open';
 
@@ -660,12 +806,20 @@ function HomeScreen({
           <span className="font-mono">MAC: {net?.mac ?? '—'}</span>
         </div>
 
-        <button
-          onClick={onNewQr}
-          className="mt-4 text-xs font-medium text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
-        >
-          Hiện lại mã QR liên kết điện thoại
-        </button>
+        <div className="mt-4 flex flex-col items-center gap-2">
+          <button
+            onClick={onNewQr}
+            className="text-xs font-medium text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
+          >
+            {mobileLinked ? 'Đã liên kết điện thoại ✓' : 'Hiện mã QR liên kết điện thoại'}
+          </button>
+          <button
+            onClick={onCheckUpdate}
+            className="text-xs font-medium text-slate-400 underline-offset-2 hover:text-slate-600 hover:underline"
+          >
+            Kiểm tra cập nhật
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -745,13 +899,13 @@ function ResultScreen({
         )}
 
         <p className="mt-6 text-xs text-slate-400">
-          Tự động quay về màn hình nhập MSSV sau 5 giây
+          Tự động quay về màn hình chính sau 5 giây
         </p>
         <button
           onClick={onDone}
           className="mt-4 rounded-xl bg-slate-900 px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
         >
-          Xong ngay
+          Về màn hình chính
         </button>
       </div>
     </div>
@@ -761,21 +915,29 @@ function ResultScreen({
 function SettingsScreen({
   net,
   labName,
+  session,
+  updateStatus,
   connOk,
   onBack,
   onRecheck,
+  onCheckUpdate,
+  onLogout,
 }: {
   net: NetworkInfo | null;
   labName: string;
+  session: PersistentSession | null;
+  updateStatus: UpdateStatus | null;
   connOk: boolean | null;
   onBack: () => void;
   onRecheck: () => void;
+  onCheckUpdate: () => void;
+  onLogout: () => void;
 }) {
   return (
     <div className="h-full overflow-y-auto px-6 py-8">
       <div className="mx-auto max-w-2xl">
-        <h1 className="text-2xl font-bold text-slate-900">Cấu hình kiosk</h1>
-        <p className="mt-1 text-slate-500">Thông tin máy và kết nối</p>
+        <h1 className="text-2xl font-bold text-slate-900">Cài đặt</h1>
+        <p className="mt-1 text-slate-500">Thông tin máy và tài khoản</p>
 
         <div className="mt-6 space-y-4">
           <Card title="Thông tin phòng Lab">
@@ -799,7 +961,41 @@ function SettingsScreen({
             </button>
           </Card>
 
-          <Card title="Định danh máy (F-DESK-CFG-03)">
+          {session && (
+            <Card title="Phiên đăng nhập">
+              <Row label="MSSV" value={session.mssv} mono />
+              <Row label="Họ tên" value={session.fullName} />
+              <Row label="MAC" value={session.mac} mono />
+              {session.hostname && (
+                <Row label="Hostname" value={session.hostname} mono />
+              )}
+              <Row
+                label="Điện thoại đã liên kết"
+                value={session.mobileLinked ? '✓ Rồi' : '✗ Chưa'}
+                tone={session.mobileLinked ? 'success' : 'default'}
+              />
+              <Row
+                label="Ngày liên kết"
+                value={new Date(session.boundAt).toLocaleString('vi-VN')}
+              />
+              <button
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      'Đăng xuất sẽ xoá phiên trên máy này. Bạn có chắc?'
+                    )
+                  ) {
+                    onLogout();
+                  }
+                }}
+                className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-100"
+              >
+                Đăng xuất & xoá phiên
+              </button>
+            </Card>
+          )}
+
+          <Card title="Định danh máy">
             <Row label="IP hiện tại" value={net?.ip ?? 'Không có'} mono />
             <Row label="MAC address" value={net?.mac ?? 'Không có'} mono />
             <Row label="Card mạng" value={net?.interface ?? '—'} mono />
@@ -817,13 +1013,32 @@ function SettingsScreen({
             )}
           </Card>
 
-          <Card title="Thoát kiosk">
-            <p className="text-sm text-slate-500">
-              Dùng mã PIN 4-8 chữ số. Liên hệ Trưởng Lab nếu quên mã.
-            </p>
-            <p className="mt-2 font-mono text-xs text-slate-400">
-              Đặt mặc định qua biến môi trường KIOSK_PIN
-            </p>
+          <Card title="Cập nhật ứng dụng">
+            <Row
+              label="Trạng thái"
+              value={
+                updateStatus?.state === 'checking'
+                  ? 'Đang kiểm tra…'
+                  : updateStatus?.state === 'available'
+                    ? `Có bản mới v${updateStatus.version}`
+                    : updateStatus?.state === 'downloading'
+                      ? `Đang tải… ${Math.round(updateStatus.progress ?? 0)}%`
+                      : updateStatus?.state === 'downloaded'
+                        ? `Đã tải xong v${updateStatus.version}`
+                        : updateStatus?.state === 'not-available'
+                          ? 'Đang ở bản mới nhất'
+                          : updateStatus?.state === 'error'
+                            ? `Lỗi: ${updateStatus.error}`
+                            : 'Chưa kiểm tra'
+              }
+              tone={updateStatus?.state === 'downloaded' ? 'success' : 'default'}
+            />
+            <button
+              onClick={onCheckUpdate}
+              className="mt-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Kiểm tra cập nhật
+            </button>
           </Card>
         </div>
 
@@ -876,66 +1091,20 @@ function Row({
   );
 }
 
-function PinScreen({
-  value,
-  setValue,
-  error,
-  onSubmit,
-  onCancel,
+function Footer({
+  net,
+  labName,
+  student,
 }: {
-  value: string;
-  setValue: (v: string) => void;
-  error: string | null;
-  onSubmit: () => void;
-  onCancel: () => void;
+  net: NetworkInfo | null;
+  labName: string;
+  student: Student | null;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-6">
-      <div className="w-full max-w-sm text-center">
-        <h1 className="text-2xl font-bold text-slate-900">Thoát chế độ kiosk</h1>
-        <p className="mt-1 text-sm text-slate-500">Nhập mã PIN quản trị</p>
-
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            onSubmit();
-          }}
-          className="mt-6"
-        >
-          <input
-            type="password"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            autoFocus
-            maxLength={8}
-            className="w-full rounded-2xl border-2 border-slate-200 px-6 py-4 text-center font-mono text-3xl tracking-[0.5em] text-slate-900 outline-none focus:border-[#f04030] focus:ring-4 focus:ring-[#f04030]/10"
-          />
-          {error && (
-            <p className="mt-2 text-sm font-medium text-red-600">{error}</p>
-          )}
-          <button
-            type="submit"
-            className="mt-4 w-full rounded-2xl bg-slate-900 px-6 py-3.5 text-base font-bold text-white hover:bg-slate-800"
-          >
-            Xác nhận
-          </button>
-        </form>
-
-        <button
-          onClick={onCancel}
-          className="mt-3 text-sm text-slate-400 hover:text-slate-600"
-        >
-          Quay lại
-        </button>
-      </div>
-    </div>
-  );
-}
-
-function Footer({ net, labName }: { net: NetworkInfo | null; labName: string }) {
-  return (
     <footer className="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-2 text-[11px] text-slate-400">
-      <span>{labName} Kiosk v0.1</span>
+      <span>
+        {labName} v0.2{student ? ` · ${student.mssv}` : ''}
+      </span>
       <span className="font-mono">
         {net?.mac ? `MAC ${net.mac}` : 'MAC —'}
       </span>
@@ -943,7 +1112,7 @@ function Footer({ net, labName }: { net: NetworkInfo | null; labName: string }) 
   );
 }
 
-/** Tiếng beep bằng Web Audio API (F-DESK-ATT-04) */
+/** Tiếng beep bằng Web Audio API */
 function playBeep() {
   try {
     const ctx = new AudioContext();
