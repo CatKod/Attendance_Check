@@ -101,6 +101,44 @@ Deno.serve(async (req: Request) => {
       .eq('kind', 'desktop')
       .maybeSingle();
 
+    // 2.5) Bug B: chống 1 MAC bị bind cho nhiều user.
+    //      Nếu SV A đã bind MAC này rồi, SV B nhập MSSV khác trên cùng máy
+    //      phải bị từ chối — không cho tạo binding mới với cùng MAC.
+    //      UNIQUE constraint (idx_device_bindings_active_unique) ở DB sẽ
+    //      chặn nốt nếu logic này bị bypass.
+    const { data: conflict } = await supabase
+      .from('device_bindings')
+      .select('id, user_id, users!inner(mssv)')
+      .eq('kind', 'desktop')
+      .eq('device_identifier', mac)
+      .eq('status', 'active')
+      .neq('user_id', u.id)
+      .maybeSingle();
+
+    if (conflict) {
+      const conflictMssv = (conflict as unknown as { users: { mssv: string } | { mssv: string }[] }).users;
+      const otherMssv = Array.isArray(conflictMssv) ? conflictMssv[0]?.mssv : conflictMssv?.mssv;
+      await supabase.from('audit_logs').insert({
+        action: 'desktop_auth_failed',
+        entity: 'device_binding',
+        payload: {
+          reason: 'MAC already bound to another user',
+          attempted_mssv: normalizedMssv,
+          other_mssv: otherMssv,
+          mac,
+        },
+      });
+      return jsonResponse(
+        {
+          error:
+            'Máy này đã được liên kết với MSSV khác. ' +
+            'Vui lòng liên hệ Trưởng Lab để reset binding.',
+          code: 'MAC_BOUND_TO_OTHER_USER',
+        },
+        403
+      );
+    }
+
     let bindingAction: 'created' | 'reused' | 'reset_rebind';
 
     if (!existing) {
