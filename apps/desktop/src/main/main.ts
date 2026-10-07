@@ -35,13 +35,20 @@ const DEV_URL = process.env.VITE_DEV_SERVER_URL ?? 'http://localhost:5173';
 // ------------------------------------------------------------
 function loadConfig(): AppConfig {
   const candidates = [
+    // Ưu tiên 1: .env cạnh .exe (cho dev hoặc khi cài đặt portable)
     path.join(process.cwd(), '.env'),
+    // Ưu tiên 2: .env bundle trong resources (khi build .exe, electron-builder
+    // copy .env vào resources/.env)
+    path.join(process.resourcesPath ?? '', '.env'),
+    // Ưu tiên 3: .env trong userData (cho end-user tự cấu hình đè)
     path.join(app.getPath('userData'), '.env'),
+    // Ưu tiên 4: .env cạnh code (cho src src)
     path.join(__dirname, '..', '.env'),
   ];
 
   const fileEnv: Record<string, string> = {};
   for (const file of candidates) {
+    if (!file) continue;
     try {
       if (!fs.existsSync(file)) continue;
       for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {

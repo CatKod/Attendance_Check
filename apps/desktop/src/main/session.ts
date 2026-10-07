@@ -90,13 +90,17 @@ export const session = {
 // ============================================================
 function regQuery(): Record<string, string> {
   try {
-    // Query toàn bộ key trong 1 lần
-    const out = execFileSync('reg.exe', ['query', REG_PATH], {
-      encoding: 'utf8',
+    // Đọc raw binary vì Windows registry lưu REG_SZ ở UTF-16LE nội bộ.
+    // Nếu để Node tự decode với 'utf8', các ký tự tiếng Việt có dấu
+    // (multi-byte UTF-8) bị hiểu nhầm thành chuỗi byte OEM code page → lỗi font.
+    const buf = execFileSync('reg.exe', ['query', REG_PATH], {
       stdio: ['ignore', 'pipe', 'ignore'],
-    });
+    }) as Buffer;
+    // reg.exe phân tách các value bằng CRLF; decode cả blob thành UTF-16LE
+    // rồi mới tách dòng.
+    const text = buf.toString('utf16le');
     const result: Record<string, string> = {};
-    for (const line of out.split(/\r?\n/)) {
+    for (const line of text.split(/\r?\n/)) {
       // Format: "    KeyName    REG_SZ    value"
       const m = line.match(/^\s*(\S+)\s+REG_SZ\s+(.*)$/);
       if (m) result[m[1]] = m[2].trim();
