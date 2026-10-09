@@ -356,6 +356,19 @@ Script sẽ in ra IP, MAC thật của máy và ảnh chụp giao diện.
 6. Bấm nút **Đăng xuất** (icon ở góc phải header) → xoá session, về màn nhập MSSV
 7. Tắt app, mở lại → tự động vào Home (nhờ session trong Registry)
 
+### Desktop — Mở app tại Wi-Fi khác (không phải lab)
+
+1. Mở app → tự động vào Home (MAC khớp) → Banner cảnh báo *"Bạn đang không ở lab, kết nối Wi-Fi lab để điểm danh"*
+2. Nút **ĐIỂM DANH** bị vô hiệu hoá
+3. Di chuyển về lab → kết nối Wi-Fi lab → banner biến mất, nút **ĐIỂM DANH** bật lại (sau ≤30s)
+
+### Desktop — MAC không khớp (đổi máy/Wi-Fi khác mà chưa reset)
+
+1. Mở app → hiển thị màn hình **khóa (LockedScreen)** với thông báo đỏ
+2. Nhấn **"Yêu cầu Trưởng Lab reset binding"** → mở email pre-fill
+3. Nhấn **"Thử lại"** → kiểm tra lại MAC (nếu đã về lab đúng máy)
+4. SV **KHÔNG thể nhập MSSV mới** trên màn hình khóa
+
 ### Mobile
 
 1. Cài app, mở lần đầu → màn hình quét QR
@@ -368,11 +381,13 @@ Script sẽ in ra IP, MAC thật của máy và ảnh chụp giao diện.
 | Tình huống | Kết quả mong đợi |
 |---|---|
 | MSSV không tồn tại | "MSSV không tồn tại trong hệ thống" |
-| Đổi máy kiosk, nhập lại MSSV | "Bạn đã được liên kết với một máy khác" |
+| Đổi Wi-Fi, mở app cùng máy | Vào Home bình thường, banner "không ở lab" |
+| Đổi máy khác, mở app (MAC khác, chưa reset) | **LockedScreen**: hiển thị thông tin SV + "Yêu cầu reset" |
+| Đổi máy khác, nhập lại MSSV | Từ chối: "Bạn đã được liên kết với một máy khác" |
 | Quét QR quá 60 giây | "Mã QR đã hết hạn" |
 | Quét lại cùng một QR | "Mã QR đã được sử dụng" |
 | Mobile đổi sang máy khác | "Tài khoản này đã được liên kết với điện thoại khác" |
-| Điểm danh ngoài Wi-Fi lab | "Không phát hiện kết nối Wi-Fi lab" |
+| Điểm danh ngoài Wi-Fi lab (cùng máy) | Server trả 403 + client banner cảnh báo |
 | Điểm danh ngoài khung giờ | "Ngoài giờ điểm danh" + giờ hợp lệ |
 | Điểm danh 2 lần trong ngày | "Bạn đã điểm danh hôm nay rồi" |
 | Mobile dùng 4G | "Bạn đang dùng dữ liệu di động" |

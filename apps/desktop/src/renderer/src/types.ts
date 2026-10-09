@@ -30,6 +30,8 @@ export interface VerifyResult {
   binding?: 'created' | 'reused' | 'reset_rebind';
   user?: Student;
   mac_address?: string;
+  /** MAC đã bind trong DB — dùng để client so sánh */
+  bound_mac?: string;
   hostname?: string;
   /** Mobile đã liên kết hay chưa — true thì không hiện QR */
   mobile_linked?: boolean;
@@ -113,11 +115,28 @@ export interface KioskBridge {
     partial: Partial<PersistentSession>
   ): Promise<{ ok: boolean; session: PersistentSession | null }>;
   clearSession(): Promise<{ ok: boolean }>;
+  /** Đọc session để hiển thị trên LockScreen (không xoá khi MAC khác) */
+  loadSessionForensic(): Promise<PersistentSession | null>;
 
   // Updater
   checkUpdate(): Promise<void>;
   getUpdateStatus(): Promise<UpdateStatus>;
   onUpdaterStatus(cb: (status: UpdateStatus) => void): void;
 
+  // Mạng
+  /** Kiểm tra IP hiện tại có thuộc subnet Wi-Fi lab hay không */
+  isAtLab(): Promise<NetworkAtLabResult>;
+
   beep(): Promise<void>;
 }
+
+/** Kết quả kiểm tra IP có thuộc Wi-Fi lab hay không */
+export interface NetworkAtLabResult {
+  atLab: boolean;
+  locationName?: string;
+  ssid?: string;
+  error?: string;
+}
+
+/** Trạng thái khóa app */
+export type LockState = 'none' | 'mac_mismatch';

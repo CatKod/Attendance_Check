@@ -31,7 +31,7 @@ Xây dựng một hệ thống điểm danh số hóa, **đa nền tảng**, t�
 - **Bước 3 – Điểm danh hằng ngày:**
   - **Tại lab:** dùng **Desktop App** (đã liên kết MAC → check IP Wi-Fi lab) hoặc **Mobile App** (đã liên kết + cùng Wi-Fi lab).
   - **Ở xa:** không điểm danh được, vì bắt buộc cùng Wi-Fi lab.
-- **Bước 4 – Các lần sau (Desktop):** Mở app là vào **thẳng Home** (nhờ session trong Registry). Sau điểm danh, ở lại Home — không reset về nhập MSSV. Có nút **Đăng xuất** rõ ràng để xoá phiên khi cần (đổi máy, v.v.).
+- **Bước 4 – Các lần sau (Desktop):** Mở app là vào **thẳng Home** (nhờ session trong Registry). Sau điểm danh, ở lại Home — không reset về nhập MSSV. Nếu MAC không khớp (đổi Wi-Fi đáng kể) → **LockedScreen**, SV phải nhờ Trưởng Lab reset. Có nút **Đăng xuất** rõ ràng để xoá phiên khi cần.
 - **Bước 5 – Auto-update:** App tự động check GitHub Releases mỗi khi khởi động. Khi có bản mới, dialog sẽ hỏi SV cập nhật.
 
 ### 1.4. Đối tượng sử dụng
@@ -174,13 +174,19 @@ Sinh viên (student)
 
 - **F-DESK-APP-01:** Phiên đăng nhập lưu trong **Windows Registry** (`HKCU\Software\APES-Lab\Kiosk`). Bao gồm MSSV, user_id, MAC, tên, ngày liên kết, trạng thái mobile.
 - **F-DESK-APP-02:** Khi mở app, **tự động đăng nhập** nếu MAC hiện tại khớp với MAC trong Registry.
-- **F-DESK-APP-03:** Nếu MAC không khớp (SV đổi máy mà chưa được reset), xoá session, hiện thông báo và yêu cầu nhập lại MSSV.
+- **F-DESK-APP-03:** Nếu MAC **không khớp** (SV đổi Wi-Fi, đổi máy mà chưa được reset):
+  - App **KHÔNG xoá session** trong Registry.
+  - Hiển thị màn hình **khóa (LockedScreen)** với thông báo *"App chỉ sử dụng được tại Lab"*.
+  - SV nhấn **"Yêu cầu Trưởng Lab reset binding"** → mở email pre-fill thông tin (MSSV, hostname, MAC).
+  - SV nhấn **"Thử lại"** → kiểm tra lại MAC khi đã về lab.
+  - SV **KHÔNG thể nhập lại MSSV** để bind MAC mới.
 - **F-DESK-APP-04:** Sau khi đăng nhập thành công, app gọi `verify-mssv` để lấy thông tin mới nhất (role, nhóm, lịch hôm nay) — KHÔNG dùng cache cũ.
 - **F-DESK-APP-05:** Sau điểm danh, ở lại **Home** (không reset về màn nhập MSSV). Tự động quay về Home sau 5 giây.
 - **F-DESK-APP-06:** Có nút **Đăng xuất** ở header. Khi bấm, xác nhận → xoá session khỏi Registry → về màn nhập MSSV.
-- **F-DESK-APP-07:** Hiển thị **fingerprint máy** khi verify: hostname, OS (vd `Windows NT 10.0.26200`), disk serial. Admin dùng thông tin này để nhận biết máy khi reset.
+- **F-DESK-APP-07:** Hiển thị **fingerprint máy** khi verify: hostname, OS, disk serial. Admin dùng để nhận biết máy khi reset.
 - **F-DESK-APP-08:** Sau khi mobile liên kết (qua QR), Desktop **đánh dấu `mobile_linked_at`** — từ lần sau app sẽ **KHÔNG hiện QR nữa**.
 - **F-DESK-APP-09:** Vẫn có nút "Liên kết ngay" trong trang chủ để SV chủ động kết nối mobile bất kỳ lúc nào.
+- **F-DESK-APP-10:** (v0.3.0+) **Kiểm tra IP tại lab**: Khi vào Home, app gọi RPC `match_wifi_by_ip` mỗi 30 giây. Nếu IP **không thuộc subnet lab** → hiển thị banner *"Bạn đang không ở lab, kết nối Wi-Fi lab để điểm danh"* và **vô hiệu hoá nút Điểm danh**.
 
 #### 4.1.4. Auto-update (v0.2.0+)
 
@@ -633,6 +639,7 @@ LẦN ĐẦU TIÊN – Desktop là nơi xác thực
 - Nếu cùng 1 user gửi 2 IP khác nhau trong cùng 1 phút → cảnh báo.
 - Nếu device binding `last_seen_at` cách hiện tại > 30 ngày → đánh dấu "không hoạt động".
 - Nếu IP không khớp subnet lab → log vào `audit_logs` để Trưởng Lab review.
+- **MAC khác với session (v0.3.0+)**: Desktop hiển thị LockedScreen — không cho điểm danh từ máy không khớp MAC. SV phải nhờ Trưởng Lab reset binding mới được dùng trên máy mới.
 
 ### 7.3. Backup
 - Supabase tự động backup hằng ngày (Point-in-Time Recovery).

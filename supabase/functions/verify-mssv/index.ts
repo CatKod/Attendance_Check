@@ -262,6 +262,8 @@ Deno.serve(async (req: Request) => {
         group_name: groupName,
       },
       mac_address: mac,
+      /** MAC đã bind trong DB — dùng để so sánh với session trên client */
+      bound_mac: existing?.device_identifier ?? mac,
       hostname: hostname ?? null,
       mobile_linked: mobileLinked,
       today_windows: formatWindows(windows),

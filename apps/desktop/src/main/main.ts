@@ -168,6 +168,47 @@ function registerIpc(): void {
   // Thông tin mạng
   ipcMain.handle('network:info', () => getNetworkInfo());
 
+  /**
+   * Kiểm tra IP hiện tại có thuộc subnet Wi-Fi lab hay không.
+   * Gọi RPC match_wifi_by_ip qua Supabase REST API.
+   * Trả về: { atLab: boolean, locationName?: string, ssid?: string }
+   */
+  ipcMain.handle('network:is-at-lab', async () => {
+    const net = getNetworkInfo();
+    if (!net.ip) {
+      return { atLab: false, error: 'Không lấy được IP' };
+    }
+    try {
+      const url = `${config.supabaseUrl}/rest/v1/rpc/match_wifi_by_ip`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: config.supabaseAnonKey,
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({ check_ip: net.ip }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        return { atLab: false, error: `HTTP ${res.status}: ${err}` };
+      }
+      const data = await res.json() as Array<{
+        id: string;
+        ssid: string;
+        location_name: string;
+      }>;
+      const matched = data?.[0];
+      return {
+        atLab: !!matched,
+        locationName: matched?.location_name,
+        ssid: matched?.ssid,
+      };
+    } catch (e) {
+      return { atLab: false, error: (e as Error).message };
+    }
+  });
+
   // Cấu hình
   ipcMain.handle('app:config', () => ({
     labName: config.labName,
@@ -202,6 +243,13 @@ function registerIpc(): void {
     session.clear();
     return { ok: true };
   });
+
+  /**
+   * session:read-forensic — Đọc session CHỈ ĐỂ HIỂN THỊ.
+   * KHÔNG xoá session khi MAC khác (khác với session:load vì nó giữ nguyên
+   * để LockScreen hiển thị thông tin SV + yêu cầu reset).
+   */
+  ipcMain.handle('session:read-forensic', () => session.read());
 
   // Xác thực MSSV — gửi kèm fingerprint
   ipcMain.handle('auth:verify-mssv', async (_e, mssv: string) => {

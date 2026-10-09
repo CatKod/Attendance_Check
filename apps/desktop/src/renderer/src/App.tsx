@@ -28,6 +28,8 @@ import type {
   AttendanceResult,
   CheckinWindow as Win,
   KioskBridge,
+  LockState,
+  NetworkAtLabResult,
   NetworkInfo,
   PersistentSession,
   QrResult,
@@ -41,7 +43,7 @@ declare global {
   }
 }
 
-type Screen = 'loading' | 'mssv' | 'qr' | 'home' | 'result' | 'settings';
+type Screen = 'loading' | 'mssv' | 'qr' | 'home' | 'result' | 'settings' | 'locked';
 
 const ROLE_LABEL: Record<string, string> = {
   student: 'Sinh viên',
@@ -70,6 +72,13 @@ export default function App() {
 
   const [attending, setAttending] = useState(false);
   const [result, setResult] = useState<AttendanceResult | null>(null);
+
+  // Trạng thái khóa app (khi MAC không khớp)
+  const [lockState, setLockState] = useState<LockState>('none');
+
+  // Trạng thái IP có thuộc Wi-Fi lab hay không
+  const [atLab, setAtLab] = useState<boolean | null>(null);
+  const [labLocation, setLabLocation] = useState<string>('');
 
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [connOk, setConnOk] = useState<boolean | null>(null);
@@ -109,11 +118,24 @@ export default function App() {
             setScreen('home');
             return;
           } else {
-            // MAC khác → xoá session, yêu cầu đăng nhập lại
-            await window.kiosk.clearSession();
-            setError(
-              'Phiên đăng nhập cũ thuộc về máy khác. Vui lòng đăng nhập lại.'
-            );
+            // MAC khác → KHÔNG xoá session, KHÔNG cho nhập lại MSSV.
+            // Hiện LockScreen với thông báo yêu cầu Trưởng Lab reset.
+            // Dùng loadSessionForensic để đọc session mà không clear.
+            const forensicSess = await window.kiosk.loadSessionForensic();
+            if (forensicSess) {
+              setSession(forensicSess);
+              setStudent({
+                id: forensicSess.userId,
+                mssv: forensicSess.mssv,
+                full_name: forensicSess.fullName,
+                khoa: '',
+                role: 'student',
+                group_name: null,
+              });
+            }
+            setLockState('mac_mismatch');
+            setScreen('locked');
+            return;
           }
         }
         setScreen('mssv');
@@ -154,6 +176,31 @@ export default function App() {
       console.error('refresh failed', e);
     }
   }, []);
+
+  /**
+   * Kiểm tra IP hiện tại có thuộc Wi-Fi lab hay không.
+   * Gọi khi vào Home và mỗi 30 giây để tự động enable/disable nút Điểm danh.
+   */
+  const checkAtLab = useCallback(async () => {
+    try {
+      const result: NetworkAtLabResult = await window.kiosk.isAtLab();
+      setAtLab(result.atLab);
+      setLabLocation(result.locationName ?? result.ssid ?? '');
+    } catch (e) {
+      console.error('checkAtLab failed', e);
+      setAtLab(false);
+    }
+  }, []);
+
+  // Kiểm tra IP lab khi vào Home và định kỳ mỗi 30 giây
+  useEffect(() => {
+    if (screen !== 'home') return;
+    void checkAtLab();
+    const t = setInterval(() => {
+      void checkAtLab();
+    }, 30000);
+    return () => clearInterval(t);
+  }, [screen, checkAtLab]);
 
   // Đồng hồ realtime
   useEffect(() => {
@@ -388,6 +435,8 @@ export default function App() {
             onAttend={doAttendance}
             error={error}
             mobileLinked={session?.mobileLinked ?? false}
+            atLab={atLab}
+            labLocation={labLocation}
             onNewQr={async () => {
               if (session?.mobileLinked) {
                 // Mobile đã link → xác nhận với user trước khi sinh QR mới
@@ -403,6 +452,39 @@ export default function App() {
               }
             }}
             onCheckUpdate={checkUpdate}
+          />
+        )}
+
+        {screen === 'locked' && lockState === 'mac_mismatch' && student && (
+          <LockedScreen
+            student={student}
+            net={net}
+            session={session}
+            onRetry={async () => {
+              // Thử lại: re-check MAC và IP
+              setLockState('none');
+              const info = await window.kiosk.getNetworkInfo();
+              setNet(info);
+              const forensicSess = await window.kiosk.loadSessionForensic();
+              if (forensicSess && forensicSess.mac === info.mac) {
+                // MAC khớp → vào Home
+                setSession(forensicSess);
+                setStudent({
+                  id: forensicSess.userId,
+                  mssv: forensicSess.mssv,
+                  full_name: forensicSess.fullName,
+                  khoa: '',
+                  role: 'student',
+                  group_name: null,
+                });
+                await refreshUserInfo(forensicSess);
+                setScreen('home');
+              } else {
+                // Vẫn không khớp → ở lại locked
+                setLockState('mac_mismatch');
+                setScreen('locked');
+              }
+            }}
           />
         )}
 
@@ -715,6 +797,8 @@ function HomeScreen({
   mobileLinked,
   onNewQr,
   onCheckUpdate,
+  atLab,
+  labLocation,
 }: {
   student: Student;
   net: NetworkInfo | null;
@@ -725,8 +809,10 @@ function HomeScreen({
   mobileLinked: boolean;
   onNewQr: () => void;
   onCheckUpdate: () => void;
+  atLab: boolean | null;
+  labLocation: string;
 }) {
-  const canAttend = status.state === 'open';
+  const canAttend = status.state === 'open' && atLab === true;
 
   return (
     <div className="flex h-full flex-col items-center justify-center px-6">
@@ -766,6 +852,19 @@ function HomeScreen({
           </div>
         )}
 
+        {atLab === false && (
+          <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-5 py-3">
+            <p className="text-sm font-medium text-red-700">
+              Bạn đang không ở lab. Kết nối Wi-Fi lab để điểm danh.
+            </p>
+            {labLocation && (
+              <p className="mt-1 text-xs text-red-600">
+                Wi-Fi hiện tại: {labLocation}
+              </p>
+            )}
+          </div>
+        )}
+
         {error && (
           <p className="mt-4 rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-600">
             {error}
@@ -791,6 +890,121 @@ function HomeScreen({
             Kiểm tra cập nhật
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * LockedScreen — hiển thị khi MAC không khớp với session.
+ * SV không thể nhập lại MSSV — chỉ có thể yêu cầu Trưởng Lab reset binding.
+ */
+function LockedScreen({
+  student,
+  net,
+  session,
+  onRetry,
+}: {
+  student: Student;
+  net: NetworkInfo | null;
+  session: { hostname?: string; mac?: string } | null;
+  onRetry: () => void;
+}) {
+  const handleRequestReset = () => {
+    const subject = encodeURIComponent('Yêu cầu reset Desktop Binding');
+    const body = encodeURIComponent(
+      `Xin chào Trưởng Lab,\n\n` +
+        `Tôi cần được reset liên kết Desktop App.\n\n` +
+        `Thông tin tài khoản:\n` +
+        `- MSSV: ${student.mssv}\n` +
+        `- Họ tên: ${student.full_name}\n` +
+        `- Hostname máy đã bind: ${session?.hostname ?? '—'}\n` +
+        `- MAC đã bind: ${session?.mac ?? '—'}\n` +
+        `- MAC hiện tại: ${net?.mac ?? '—'}\n` +
+        `- Máy hiện tại: ${net?.ip ?? '—'}\n\n` +
+        `Vui lòng reset binding để tôi có thể sử dụng app trên máy mới.\n\n` +
+        `Trân trọng.`
+    );
+    window.location.href = `mailto:apes-lab@ptit.edu.vn?subject=${subject}&body=${body}`;
+  };
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-6">
+      <div className="w-full max-w-lg text-center">
+        {/* Icon khóa */}
+        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-red-100 text-red-600">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+            <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+          </svg>
+        </div>
+
+        <h1 className="mt-6 text-2xl font-bold text-slate-900">
+          App chỉ sử dụng được tại Lab
+        </h1>
+
+        <p className="mt-3 text-slate-500">
+          Tài khoản này đã được liên kết với một máy khác.
+        </p>
+
+        {/* Thông tin tài khoản */}
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-left">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">
+            Thông tin tài khoản
+          </h2>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="text-sm text-slate-500">Họ tên</span>
+              <span className="text-sm font-semibold text-slate-700">{student.full_name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-sm text-slate-500">MSSV</span>
+              <span className="font-mono text-sm font-semibold text-slate-700">{student.mssv}</span>
+            </div>
+            {session?.hostname && (
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">Máy đã bind</span>
+                <span className="font-mono text-xs text-slate-600">{session.hostname}</span>
+              </div>
+            )}
+            {session?.mac && (
+              <div className="flex justify-between">
+                <span className="text-sm text-slate-500">MAC đã bind</span>
+                <span className="font-mono text-xs text-slate-600">{session.mac}</span>
+              </div>
+            )}
+            {net?.mac && (
+              <div className="flex justify-between border-t border-slate-100 pt-2">
+                <span className="text-sm text-slate-500">MAC hiện tại</span>
+                <span className="font-mono text-xs text-red-500">{net.mac}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <p className="mt-4 rounded-xl bg-red-50 px-5 py-3 text-sm text-red-700">
+          Địa chỉ MAC của máy này không khớp với máy đã liên kết. App sẽ không hoạt động trên máy khác nếu chưa được Trưởng Lab reset.
+        </p>
+
+        {/* Nút hành động */}
+        <div className="mt-6 flex flex-col gap-3">
+          <button
+            onClick={handleRequestReset}
+            className="w-full rounded-2xl bg-[#f04030] px-6 py-4 text-base font-bold text-white shadow-lg shadow-[#f04030]/25 transition-all hover:bg-[#d63324]"
+          >
+            Yêu cầu Trưởng Lab reset binding
+          </button>
+          <button
+            onClick={onRetry}
+            className="w-full rounded-2xl border border-slate-200 bg-white px-6 py-3 text-base font-medium text-slate-600 transition-colors hover:bg-slate-50"
+          >
+            Thử lại (khi đã về lab)
+          </button>
+        </div>
+
+        <p className="mt-4 text-xs text-slate-400">
+          Sau khi Trưởng Lab reset, bạn sẽ được quay lại nhập MSSV trên máy mới.
+        </p>
       </div>
     </div>
   );
