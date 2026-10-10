@@ -1,6 +1,6 @@
 {
   "name": "@apes/desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "author": "APES Lab <apes@ptit.edu.vn>",
   "description": "APES Lab Desktop App - đăng nhập cố định theo máy, điểm danh, tự cập nhật",
