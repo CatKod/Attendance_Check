@@ -104,17 +104,29 @@ export default function App() {
           // So sánh MAC của session với MAC hiện tại
           if (sess.mac === info.mac) {
             // Hợp lệ → auto-login
-            setSession(sess);
+            // Lưu session trước rồi mới refresh (không setScreen sớm)
+            const localSession = sess;
+            setSession(localSession);
             setStudent({
-              id: sess.userId,
-              mssv: sess.mssv,
-              full_name: sess.fullName,
+              id: localSession.userId,
+              mssv: localSession.mssv,
+              full_name: localSession.fullName,
               khoa: '',
               role: 'student',
               group_name: null,
             });
-            // Gọi lại verify để lấy windows + check mobile_linked
-            await refreshUserInfo(sess);
+
+            // Gọi refreshUserInfo → nếu server reject (MAC không còn valid
+            // trên server) → sẽ hiện màn hình nhập MSSV thay vì vào Home
+            try {
+              await refreshUserInfo(localSession);
+            } catch {
+              // refresh thất bại → vẫn cho ở local session nhưng không vào Home
+              setScreen('mssv');
+              setError('Không xác thực được phiên. Vui lòng nhập lại MSSV.');
+              return;
+            }
+
             setScreen('home');
             return;
           } else {
@@ -157,23 +169,28 @@ export default function App() {
    */
   const refreshUserInfo = useCallback(async (sess: PersistentSession) => {
     try {
-      // Gọi verify-mssv với mssv của session để lấy lại windows + mobile_linked
-      // (Edge Function sẽ trả về vì MAC khớp, không tạo binding mới)
       const { data } = await window.kiosk.verifyMssv(sess.mssv);
-      if (data.success && data.user) {
-        setStudent(data.user);
-        setWindows(data.today_windows ?? []);
-        if (data.mobile_linked !== undefined) {
-          const updated: PersistentSession = {
-            ...sess,
-            mobileLinked: data.mobile_linked,
-          };
-          await window.kiosk.saveSession(updated);
-          setSession(updated);
-        }
+      // Nếu server từ chối (MAC không còn valid, hoặc bị reset ở server),
+      // data.success = false hoặc data.code set → throw để caller xử lý
+      if (!data.success || !data.user) {
+        const err = new Error(data.error ?? 'Xác thực phiên thất bại');
+        (err as unknown as { code: string }).code = data.code ?? 'SESSION_INVALID';
+        throw err;
+      }
+      setStudent(data.user);
+      setWindows(data.today_windows ?? []);
+      if (data.mobile_linked !== undefined) {
+        const updated: PersistentSession = {
+          ...sess,
+          mobileLinked: data.mobile_linked,
+        };
+        await window.kiosk.saveSession(updated);
+        setSession(updated);
       }
     } catch (e) {
       console.error('refresh failed', e);
+      // Re-throw để caller (init useEffect) biết và xử lý (quay về MSSV)
+      throw e;
     }
   }, []);
 
@@ -254,7 +271,21 @@ export default function App() {
       const { data } = await window.kiosk.verifyMssv(code);
 
       if (!data.success || !data.user) {
-        setError(data.error ?? 'Xác thực thất bại');
+        const code = (data as { code?: string }).code;
+        const errMsg = data.error ?? 'Xác thực thất bại';
+
+        if (code === 'MAC_BOUND_TO_OTHER_USER') {
+          const otherMssv = (data as { other_mssv?: string }).other_mssv ?? '';
+          const otherName = (data as { other_name?: string }).other_name ?? '';
+          const hint = otherMssv
+            ? `Máy này đã thuộc về SV ${otherMssv}${otherName ? ` (${otherName})` : ''}. Liên hệ Trưởng Lab để reset.`
+            : errMsg;
+          setError(hint);
+        } else if (code === 'MAC_MISMATCH') {
+          setError('Tài khoản của bạn đã được liên kết với máy khác. Liên hệ Trưởng Lab để reset.');
+        } else {
+          setError(errMsg);
+        }
         setShake(true);
         setTimeout(() => setShake(false), 400);
         setVerifying(false);

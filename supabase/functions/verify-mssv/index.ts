@@ -101,23 +101,35 @@ Deno.serve(async (req: Request) => {
       .eq('kind', 'desktop')
       .maybeSingle();
 
-    // 2.5) Bug B: chống 1 MAC bị bind cho nhiều user.
-    //      Nếu SV A đã bind MAC này rồi, SV B nhập MSSV khác trên cùng máy
-    //      phải bị từ chối — không cho tạo binding mới với cùng MAC.
-    //      UNIQUE constraint (idx_device_bindings_active_unique) ở DB sẽ
-    //      chặn nốt nếu logic này bị bypass.
-    const { data: conflict } = await supabase
+    // 2.5) Bug fix: chống 1 MAC bị bind cho nhiều user.
+    //      Nếu MAC này đã bind với user khác (active), từ chối ngay.
+    //      Query có .limit(1) vì cùng 1 MAC có thể bị bind với nhiều user
+    //      (do bug trước đó hoặc data race). .maybeSingle() fail khi
+    //      có nhiều hơn 1 row → tách riêng count vs data.
+    const { count: conflictCount } = await supabase
       .from('device_bindings')
-      .select('id, user_id, users!inner(mssv)')
+      .select('id', { count: 'exact', head: true })
       .eq('kind', 'desktop')
       .eq('device_identifier', mac)
       .eq('status', 'active')
       .neq('user_id', u.id)
-      .maybeSingle();
+      .limit(1);
 
-    if (conflict) {
-      const conflictMssv = (conflict as unknown as { users: { mssv: string } | { mssv: string }[] }).users;
-      const otherMssv = Array.isArray(conflictMssv) ? conflictMssv[0]?.mssv : conflictMssv?.mssv;
+    if (conflictCount && conflictCount > 0) {
+      // Lấy thông tin owner của MAC để báo user
+      const { data: conflictOwner } = await supabase
+        .from('device_bindings')
+        .select('users!inner(mssv, full_name)')
+        .eq('kind', 'desktop')
+        .eq('device_identifier', mac)
+        .eq('status', 'active')
+        .neq('user_id', u.id)
+        .limit(1)
+        .maybeSingle();
+
+      const otherMssv = (conflictOwner as unknown as { users: { mssv: string; full_name: string } })?.users?.mssv ?? 'MSSV khác';
+      const otherName = (conflictOwner as unknown as { users: { mssv: string; full_name: string } })?.users?.full_name ?? '';
+
       await supabase.from('audit_logs').insert({
         action: 'desktop_auth_failed',
         entity: 'device_binding',
@@ -131,9 +143,11 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(
         {
           error:
-            'Máy này đã được liên kết với MSSV khác. ' +
+            `Máy này đã được liên kết với SV ${otherMssv}${otherName ? ` (${otherName})` : ''}. ` +
             'Vui lòng liên hệ Trưởng Lab để reset binding.',
           code: 'MAC_BOUND_TO_OTHER_USER',
+          other_mssv: otherMssv,
+          other_name: otherName,
         },
         403
       );
